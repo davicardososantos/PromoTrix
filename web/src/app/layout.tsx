@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import { PwaRegister } from "@/components/pwa-register";
 import "./globals.css";
+
+const inter = Inter({ subsets: ["latin"], variable: "--fonte", display: "swap" });
 
 export const metadata: Metadata = {
   title: "PromoTrix",
@@ -10,11 +13,18 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: "PromoTrix", statusBarStyle: "default" },
 };
 
-export const viewport: Viewport = { themeColor: "#ffe600", width: "device-width", initialScale: 1 };
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f6f8" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0d12" },
+  ],
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" className={inter.variable}>
       <body>
         {children}
         <PwaRegister />

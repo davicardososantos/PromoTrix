@@ -24,10 +24,10 @@ export function PwaRegister() {
 
   if (!convite || dispensado) return null;
   return (
-    <div className="faixa" style={{ position: "fixed", left: 12, right: 12, bottom: 12, display: "flex", gap: 10, alignItems: "center" }}>
-      <span style={{ flex: 1 }}>Instalar o PromoTrix como app na tela inicial?</span>
+    <div className="convite">
+      <span style={{ flex: 1, fontSize: 14 }}>Instalar o PromoTrix como app na tela inicial?</span>
       <button
-        className="botao"
+        className="btn btn-marca"
         onClick={async () => {
           await convite.prompt();
           await convite.userChoice;
@@ -36,7 +36,7 @@ export function PwaRegister() {
       >
         Instalar
       </button>
-      <button className="botao secundario" onClick={() => setDispensado(true)}>
+      <button className="btn btn-secundario" onClick={() => setDispensado(true)}>
         Agora não
       </button>
     </div>

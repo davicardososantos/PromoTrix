@@ -40,6 +40,10 @@ model Regra {
   precoMin       Float?
   precoMax       Float?
   temperaturaMin Float?
+  /// Preço normal do produto, tirado de loja de verdade. Serve para calcular o % de desconto.
+  precoReferencia Float?
+  /// Só avisa se o desconto for pelo menos este %.
+  descontoMin    Float?
   ate            String?
   ativa          Boolean    @default(true)
   ordem          Int        @default(0)
@@ -65,6 +69,11 @@ model Promocao {
   postadaEm      DateTime?
   link           String
   cupom          String?
+  /// Foto do produto (servida pelo Pelando).
+  imagem         String?
+  /// % de desconto e de onde ele veio (cupom do Pelando, "X% OFF" no título ou o preço normal da regra).
+  desconto       Float?
+  descontoOrigem String?
   regraId        String?
   regra          Regra?    @relation(fields: [regraId], references: [id], onDelete: SetNull)
   primeiraVez    DateTime  @default(now())

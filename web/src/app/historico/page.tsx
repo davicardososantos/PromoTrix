@@ -14,62 +14,49 @@ export default async function Historico() {
   return (
     <>
       <Topo />
-      <main>
-        <h1>Histórico</h1>
-        <p className="suave">As últimas 30 promoções de cada regra que o PC encontrou.</p>
+      <main className="pagina">
+        <div className="cabeca">
+          <div>
+            <h1>Histórico</h1>
+            <p>As últimas 30 ofertas de cada regra. A barra mostra o preço em relação à mais cara.</p>
+          </div>
+        </div>
         {regras.map((r) => {
-          const comPreco = r.promocoes.filter((p) => p.preco != null);
-          const menor = comPreco.reduce<(typeof comPreco)[number] | null>(
-            (m, p) => (m == null || p.preco! < m.preco! ? p : m),
-            null,
-          );
+          const precos = r.promocoes.map((p) => p.preco).filter((v): v is number => v != null);
+          const menor = precos.length ? Math.min(...precos) : null;
+          const maior = precos.length ? Math.max(...precos) : null;
           return (
-            <section key={r.id}>
-              <h2>
-                {r.grupo} · {r.nome}
-              </h2>
-              {r.promocoes.length === 0 ? (
-                <p className="vazio">Nenhuma promoção ainda.</p>
-              ) : (
-                <>
-                  {menor && (
-                    <p className="suave">
-                      Menor preço visto: <b>{reais(menor.preco)}</b> em {quando(menor.postadaEm ?? menor.primeiraVez)} (
-                      {menor.loja}). Alvo atual: {r.precoMax != null ? reais(r.precoMax) : "qualquer preço"}.
-                    </p>
-                  )}
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Preço</th>
-                        <th>Promoção</th>
-                        <th>Loja</th>
-                        <th>Visto em</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {r.promocoes.map((p) => (
-                        <tr key={p.id}>
-                          <td className="valor">{reais(p.preco)}</td>
-                          <td>
-                            <a href={p.link} target="_blank" rel="noreferrer">
-                              {p.titulo}
-                            </a>
-                            {p.cupom && (
-                              <>
-                                {" "}
-                                <span className="cupom">{p.cupom}</span>
-                              </>
-                            )}
-                          </td>
-                          <td>{p.loja}</td>
-                          <td className="suave">{quando(p.primeiraVez)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </>
-              )}
+            <section key={r.id} className="hist">
+              <h2>{r.nome}</h2>
+              <p className="resumo">
+                {r.grupo}
+                {r.promocoes.length
+                  ? ` · ${r.promocoes.length} oferta(s) · menor ${reais(menor)} · alvo ${r.precoMax != null ? reais(r.precoMax) : "qualquer preço"}`
+                  : " · nenhuma oferta ainda"}
+                {r.precoReferencia != null ? ` · preço normal ${reais(r.precoReferencia)}` : ""}
+              </p>
+              {r.promocoes.map((p) => (
+                <div key={p.id} className="linha">
+                  <span className={`valor${p.preco != null && p.preco === menor ? " menor" : ""}`}>{reais(p.preco)}</span>
+                  <div>
+                    <a href={p.link} target="_blank" rel="noreferrer">
+                      {p.titulo}
+                    </a>
+                    <div>
+                      <small>
+                        {p.loja} · {quando(p.primeiraVez)}
+                        {p.desconto ? ` · -${Math.round(p.desconto)}%` : ""}
+                        {p.cupom ? ` · cupom ${p.cupom}` : ""}
+                      </small>
+                    </div>
+                    {p.preco != null && maior ? (
+                      <div className="barra">
+                        <span style={{ width: `${Math.max(4, (p.preco / maior) * 100)}%` }} />
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
             </section>
           );
         })}

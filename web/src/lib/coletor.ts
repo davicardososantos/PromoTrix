@@ -30,6 +30,8 @@ export async function configParaColetor() {
       ...(r.precoMin != null ? { preco_min: r.precoMin } : {}),
       ...(r.precoMax != null ? { preco_max: r.precoMax } : {}),
       ...(r.temperaturaMin != null ? { temperatura_min: r.temperaturaMin } : {}),
+      ...(r.precoReferencia != null ? { preco_referencia: r.precoReferencia } : {}),
+      ...(r.descontoMin != null ? { desconto_min: r.descontoMin } : {}),
       ...(r.ate ? { ate: r.ate } : {}),
     })),
   };

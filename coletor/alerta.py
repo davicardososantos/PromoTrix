@@ -34,6 +34,10 @@ def mostrar(promos, painel, teste):
         caixa.pack(fill="x")
         tk.Label(caixa, text=p["regra"], font=(FONTE, 15, "bold"), bg=BRANCO, fg=CINZA, anchor="w").pack(fill="x")
         tk.Label(caixa, text=p["preco_txt"], font=(FONTE, 44, "bold"), bg=BRANCO, fg=VERDE, anchor="w").pack(fill="x")
+        extras = [x for x in (p.get("desconto_txt"), f"{p['temperatura']:.0f}° no Pelando" if p.get("temperatura") else None) if x]
+        if extras:
+            tk.Label(caixa, text="  ·  ".join(extras), font=(FONTE, 13, "bold"), bg=BRANCO, fg=VERDE_ESCURO,
+                     anchor="w").pack(fill="x")
         tk.Label(caixa, text=f"{p['loja']} · {p['titulo']}", font=(FONTE, 12), bg=BRANCO, fg=ESCURO,
                  anchor="w", justify="left", wraplength=600).pack(fill="x")
         botoes = tk.Frame(caixa, bg=BRANCO, pady=12)

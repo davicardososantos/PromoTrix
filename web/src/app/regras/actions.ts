@@ -36,6 +36,8 @@ export async function salvarRegra(dados: FormData) {
     precoMin: numero(dados.get("precoMin")),
     precoMax: numero(dados.get("precoMax")),
     temperaturaMin: numero(dados.get("temperaturaMin")),
+    precoReferencia: numero(dados.get("precoReferencia")),
+    descontoMin: numero(dados.get("descontoMin")),
     ate: texto(dados.get("ate")),
   };
   if (!campos.grupo || !campos.nome) return;

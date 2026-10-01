@@ -6,6 +6,18 @@ import { alternarBusca, alternarRegra, apagarBusca, apagarRegra, salvarBusca, sa
 
 export const dynamic = "force-dynamic";
 
+const dataBr = (iso: string) => iso.split("-").reverse().join("/");
+
+function resumo(r: Regra) {
+  const partes = [r.precoMax != null ? `até ${reais(r.precoMax)}` : "qualquer preço"];
+  if (r.precoReferencia != null) partes.push(`normal ${reais(r.precoReferencia)}`);
+  if (r.descontoMin != null) partes.push(`${r.descontoMin}%+ de desconto`);
+  if (r.temperaturaMin != null) partes.push(`${r.temperaturaMin}°+ no Pelando`);
+  if (r.ate) partes.push(`vale até ${dataBr(r.ate)}`);
+  if (!r.ativa) partes.push("desligada");
+  return partes.join(" · ");
+}
+
 function FormRegra({ r }: { r?: Regra }) {
   return (
     <form action={salvarRegra} className="campos">
@@ -21,12 +33,12 @@ function FormRegra({ r }: { r?: Regra }) {
       <label>
         Prioridade
         <select name="prioridade" defaultValue={r?.prioridade ?? "normal"}>
-          <option value="alta">Alta (janela grande + celular)</option>
-          <option value="normal">Normal (só painel)</option>
+          <option value="alta">Alta: janela no PC + celular</option>
+          <option value="normal">Normal: só no painel</option>
         </select>
       </label>
       <label>
-        Precisa ter todos (separe por vírgula)
+        Precisa ter todos (vírgula)
         <input name="precisa" defaultValue={r ? lista(r.precisa).join(", ") : ""} placeholder="cooktop, electrolux, gas" />
       </label>
       <label>
@@ -46,14 +58,22 @@ function FormRegra({ r }: { r?: Regra }) {
         <input name="precoMax" inputMode="decimal" defaultValue={r?.precoMax ?? ""} />
       </label>
       <label>
+        Preço normal (R$) · calcula o % OFF
+        <input name="precoReferencia" inputMode="decimal" defaultValue={r?.precoReferencia ?? ""} />
+      </label>
+      <label>
+        Desconto mínimo (%)
+        <input name="descontoMin" inputMode="numeric" defaultValue={r?.descontoMin ?? ""} />
+      </label>
+      <label>
         Votos mínimos no Pelando (°)
         <input name="temperaturaMin" inputMode="numeric" defaultValue={r?.temperaturaMin ?? ""} />
       </label>
       <label>
-        Vale até (data)
+        Vale até
         <input name="ate" type="date" defaultValue={r?.ate ?? ""} />
       </label>
-      <button className="botao" type="submit">
+      <button className="btn btn-primario" type="submit">
         {r ? "Salvar" : "Criar regra"}
       </button>
     </form>
@@ -70,97 +90,107 @@ export default async function Regras() {
   return (
     <>
       <Topo />
-      <main>
-        <h1>Regras</h1>
-        <p className="suave">
-          O PC lê estas regras a cada coleta. A primeira que bater vence. Maiúsculas e acentos não importam.
-        </p>
+      <main className="pagina">
+        <div className="cabeca">
+          <div>
+            <h1>Regras</h1>
+            <p>O que o PC caça. Ele lê estas regras a cada coleta; a primeira que bater vence.</p>
+          </div>
+        </div>
 
         {grupos.map((g) => (
-          <section key={g}>
-            <h2>{g}</h2>
+          <section key={g} className="secao">
+            <div className="secao-cabeca">
+              <h2>{g}</h2>
+              <span className="contagem">{regras.filter((r) => r.grupo === g).length}</span>
+            </div>
             {regras
               .filter((r) => r.grupo === g)
               .map((r) => (
-                <details key={r.id} className={r.ativa ? "" : "desligada"}>
+                <details key={r.id} className={`regra${r.ativa ? "" : " desligada"}`}>
                   <summary>
                     <span className="nome">{r.nome}</span>
                     <span className={`etiqueta ${r.prioridade}`}>{r.prioridade}</span>
-                    <span className="suave">
-                      {r.precoMax != null ? `até ${reais(r.precoMax)}` : "qualquer preço"}
-                      {r.ate ? ` · até ${r.ate.split("-").reverse().join("/")}` : ""}
-                      {r.ativa ? "" : " · desligada"}
-                    </span>
+                    <span className="resumo-alvo">{resumo(r)}</span>
                   </summary>
-                  <FormRegra r={r} />
-                  <div className="acoes">
-                    <form action={alternarRegra}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <button className="botao secundario" type="submit">
-                        {r.ativa ? "Desligar" : "Ligar"}
-                      </button>
-                    </form>
-                    <form action={apagarRegra}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <button className="botao perigo" type="submit">
-                        Apagar
-                      </button>
-                    </form>
+                  <div className="dentro">
+                    <FormRegra r={r} />
+                    <div className="acoes">
+                      <form action={alternarRegra}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <button className="btn btn-secundario" type="submit">
+                          {r.ativa ? "Desligar" : "Ligar"}
+                        </button>
+                      </form>
+                      <form action={apagarRegra}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <button className="btn btn-perigo" type="submit">
+                          Apagar
+                        </button>
+                      </form>
+                    </div>
                   </div>
                 </details>
               ))}
           </section>
         ))}
 
-        <h2>Nova regra</h2>
-        <details open={regras.length === 0}>
-          <summary>
-            <span className="nome">Criar regra</span>
-          </summary>
-          <FormRegra />
-        </details>
+        <section className="secao">
+          <div className="secao-cabeca">
+            <h2>Nova regra</h2>
+          </div>
+          <details className="regra" open={regras.length === 0}>
+            <summary>
+              <span className="nome">Criar regra</span>
+            </summary>
+            <div className="dentro">
+              <FormRegra />
+            </div>
+          </details>
+        </section>
 
-        <h2>Buscas no Pelando</h2>
-        <p className="suave">Termos que o PC pesquisa. As regras só enxergam o que aparece nestas buscas.</p>
-        <table>
-          <tbody>
+        <section className="secao">
+          <div className="secao-cabeca">
+            <h2>Buscas no Pelando</h2>
+            <span className="contagem">{buscas.length}</span>
+          </div>
+          <p className="resumo-alvo" style={{ marginTop: 0 }}>
+            Os termos que o PC pesquisa. As regras só enxergam o que aparece nestas buscas.
+          </p>
+          <div className="buscas">
             {buscas.map((b) => (
-              <tr key={b.id} className={b.ativa ? "" : "desligada"}>
-                <td>{b.termo}</td>
-                <td className="suave">{b.ate ? `até ${b.ate.split("-").reverse().join("/")}` : ""}</td>
-                <td>
-                  <div className="acoes" style={{ marginTop: 0 }}>
-                    <form action={alternarBusca}>
-                      <input type="hidden" name="id" value={b.id} />
-                      <button className="botao secundario" type="submit">
-                        {b.ativa ? "Desligar" : "Ligar"}
-                      </button>
-                    </form>
-                    <form action={apagarBusca}>
-                      <input type="hidden" name="id" value={b.id} />
-                      <button className="botao perigo" type="submit">
-                        Apagar
-                      </button>
-                    </form>
-                  </div>
-                </td>
-              </tr>
+              <span key={b.id} className={`busca${b.ativa ? "" : " desligada"}`}>
+                {b.termo}
+                {b.ate && <small> · até {dataBr(b.ate)}</small>}
+                <form action={alternarBusca}>
+                  <input type="hidden" name="id" value={b.id} />
+                  <button type="submit" title={b.ativa ? "Desligar" : "Ligar"}>
+                    {b.ativa ? "pausar" : "ligar"}
+                  </button>
+                </form>
+                <form action={apagarBusca}>
+                  <input type="hidden" name="id" value={b.id} />
+                  <button type="submit" title="Apagar">
+                    ×
+                  </button>
+                </form>
+              </span>
             ))}
-          </tbody>
-        </table>
-        <form action={salvarBusca} className="campos" style={{ marginTop: 12 }}>
-          <label>
-            Novo termo
-            <input name="termo" placeholder="lava loucas electrolux" required />
-          </label>
-          <label>
-            Vale até (data, opcional)
-            <input name="ate" type="date" />
-          </label>
-          <button className="botao" type="submit">
-            Adicionar busca
-          </button>
-        </form>
+          </div>
+          <form action={salvarBusca} className="campos">
+            <label>
+              Novo termo
+              <input name="termo" placeholder="lava loucas electrolux" required />
+            </label>
+            <label>
+              Vale até (opcional)
+              <input name="ate" type="date" />
+            </label>
+            <button className="btn btn-primario" type="submit">
+              Adicionar busca
+            </button>
+          </form>
+        </section>
       </main>
     </>
   );

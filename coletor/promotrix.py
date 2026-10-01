@@ -114,6 +114,11 @@ def promocoes(termo):
             continue
         loja = re.search(r'"store":\[0,\{"id":\[0,"\d+"\],"name":\[0,"([^"]+)"', t)
         preco, temperatura = campo(t, "price"), campo(t, "temperature")
+        # As imagens do Pelando têm o endereço assinado por tamanho (".../<assinatura>=/0x300/..."): não dá
+        # para trocar o tamanho no link. Pega a maior versão que vem pronta no srcset.
+        tamanhos = re.findall(r'"url":\[0,"(https://media\.pelando\.com\.br/[^"]+)"\],"width":\[0,(\d+)\]', t)
+        imagem = max(tamanhos, key=lambda u: int(u[1]))[0] if tamanhos else campo(t, "imageUrl")
+        pct = campo(t, "discountPercentage")
         achadas[id_] = {
             "id": id_,
             "titulo": titulo.strip(),
@@ -123,8 +128,30 @@ def promocoes(termo):
             "loja": loja.group(1) if loja else "?",
             "temperatura": float(temperatura) if temperatura else 0.0,
             "link": "https://www.pelando.com.br/d/" + slug,
+            "imagem": imagem,
+            # Só vem preenchido em cupom ("20% OFF em LEGO"); em oferta comum o Pelando não guarda o "de/por".
+            "desconto_pelando": float(pct) if pct and float(pct) > 0 else None,
         }
     return achadas
+
+
+def desconto(p, regra):
+    """% de desconto, só a partir de dado real. Devolve (porcentagem, de onde veio) ou (None, None).
+
+    1. o % que o Pelando informa (cupons);
+    2. um "X% OFF" escrito no título;
+    3. o "preço normal" cadastrado na regra (preco_referencia), tirado de loja de verdade.
+    O Pelando não guarda o preço antigo das ofertas, e as lojas bloqueiam leitura automática."""
+    opcoes = []
+    if p.get("desconto_pelando"):
+        opcoes.append((p["desconto_pelando"], "informado no Pelando"))
+    m = re.search(r"(\d{1,2})\s?%\s?(?:off|de desconto)", normalizar(p["titulo"]))
+    if m:
+        opcoes.append((float(m.group(1)), "escrito na oferta"))
+    ref = regra.get("preco_referencia") if regra else None
+    if ref and p["preco"] and p["preco"] < ref:
+        opcoes.append((round((ref - p["preco"]) / ref * 100), f"abaixo do preço normal ({reais(ref)})"))
+    return max(opcoes) if opcoes else (None, None)
 
 
 def cupom(link):
@@ -155,8 +182,8 @@ def api(metodo, caminho, corpo=None):
 
 
 def obter_config():
-    """Servidor → cópia local (config-cache.json) → config.json, nessa ordem."""
-    if servidor():
+    """Servidor → cópia local (config-cache.json) → config.json, nessa ordem. Com --local, só o config.json."""
+    if servidor() and "--local" not in sys.argv:
         try:
             config = api("GET", "/api/coletor/config")
             CONFIG_CACHE.write_text(json.dumps(config, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -173,11 +200,15 @@ def obter_config():
 def enviar_coleta(lidas, ativas, novos_ids, cupons):
     if not servidor():
         return
-    dentro = [{
-        "id": p["id"], "titulo": p["titulo"], "preco": p["preco"], "loja": p["loja"],
-        "temperatura": p["temperatura"], "criada": p["criada"], "link": p["link"],
-        "regra_id": r.get("id"), "regra_nome": r["nome"], "cupom": cupons.get(p["id"]),
-    } for r, p in ativas]
+    dentro = []
+    for r, p in ativas:
+        pct, origem = desconto(p, r)
+        dentro.append({
+            "id": p["id"], "titulo": p["titulo"], "preco": p["preco"], "loja": p["loja"],
+            "temperatura": p["temperatura"], "criada": p["criada"], "link": p["link"],
+            "regra_id": r.get("id"), "regra_nome": r["nome"], "cupom": cupons.get(p["id"]),
+            "imagem": p.get("imagem"), "desconto": pct, "desconto_origem": origem,
+        })
     try:
         resposta = api("POST", "/api/coletor/coleta", {"lidas": lidas, "dentro": dentro, "novos": novos_ids})
         log(f"servidor: coleta enviada ({len(dentro)} dentro, {len(novos_ids)} novas, {resposta.get('pushes', 0)} push)")
@@ -202,6 +233,8 @@ def bate(p, r):
         return False
     if "preco_min" in r and (preco is None or preco < r["preco_min"]):
         return False
+    if "desconto_min" in r and (desconto(p, r)[0] or 0) < r["desconto_min"]:
+        return False
     return p["temperatura"] >= r.get("temperatura_min", float("-inf"))
 
 
@@ -209,6 +242,8 @@ def descrever_alvo(r):
     partes = []
     if "preco_max" in r:
         partes.append("até " + reais(r["preco_max"]))
+    if "desconto_min" in r:
+        partes.append(f"com {r['desconto_min']:.0f}% ou mais de desconto")
     if "temperatura_min" in r:
         partes.append(f"a partir de {r['temperatura_min']:.0f}° no Pelando")
     if r.get("ate"):
@@ -269,6 +304,9 @@ section{margin:22px 0}h2{font-size:20px;margin:0 0 8px}
 .preco{font-size:26px;font-weight:700;color:var(--preco)}.titulo{font-weight:600}
 .meta{color:var(--suave);font-size:13px}.cupom{font-family:Consolas,monospace;background:var(--destaque);color:#111827;padding:1px 6px;border-radius:4px}
 .novo{color:var(--novo);font-weight:700;font-size:12px;text-transform:uppercase}
+.foto{position:relative;background:#fff;border-radius:8px;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.foto img{max-width:100%;max-height:100%;object-fit:contain}
+.off{position:absolute;top:8px;left:8px;background:var(--preco);color:#fff;font-weight:700;font-size:13px;padding:2px 8px;border-radius:999px}
 a.botao{margin-top:auto;align-self:flex-start;background:var(--preco);color:#fff;text-decoration:none;padding:6px 12px;border-radius:6px;font-weight:600}
 .vazio{color:var(--suave);font-style:italic}
 """
@@ -293,8 +331,13 @@ def gerar_painel(config, ativas, avisados, regras):
             novo = em and momento - datetime.fromisoformat(em) < timedelta(hours=24)
             cod = aviso.get("cupom")
             quando = datetime.fromisoformat(p["criada"].replace("Z", "+00:00")).astimezone(BRT) if p["criada"] else None
+            pct, origem = desconto(p, r)
+            foto = ""
+            if p.get("imagem"):
+                selo = f'<span class="off" title="{esc(origem)}">-{pct:.0f}%</span>' if pct else ""
+                foto = f'<div class="foto">{selo}<img src="{esc(p["imagem"])}" alt="" loading="lazy"></div>'
             cartoes.append(
-                '<div class="cartao">'
+                '<div class="cartao">' + foto
                 + ('<span class="novo">novo</span>' if novo else "")
                 + f'<span class="preco">{esc(reais(p["preco"]))}</span>'
                 + f'<span class="titulo">{esc(p["titulo"])}</span>'
@@ -375,8 +418,9 @@ def main():
     if "--listar" in args:
         for r, p in sorted(ativas, key=lambda x: (x[0]["grupo"], x[1]["preco"] or 0)):
             ja = "  (já avisada)" if p["id"] in avisados else ""
-            print(f"[{r['prioridade']:6}] {r['grupo'][:14]:14} {r['nome'][:26]:26} {reais(p['preco']):>12}  "
-                  f"{p['loja'][:13]:13} {p['titulo'][:55]}{ja}")
+            pct_ = desconto(p, r)[0]
+            print(f"[{r['prioridade']:6}] {r['grupo'][:14]:14} {r['nome'][:26]:26} {reais(p['preco']):>12} "
+                  f"{(f'-{pct_:.0f}%' if pct_ else ''):>5} {p['temperatura']:5.0f}°  {p['loja'][:13]:13} {p['titulo'][:50]}{ja}")
         print(f"{len(todas)} promoções lidas, {len(ativas)} dentro das regras (regras: {origem})")
         return
 
@@ -387,8 +431,11 @@ def main():
             continue
         cod = cupom(p["link"])
         avisados[p["id"]] = {"preco": p["preco"], "em": agora().isoformat(timespec="minutes"), "cupom": cod}
+        pct_, de_onde = desconto(p, r)
         item = {"regra": r["nome"], "preco_txt": reais(p["preco"]), "loja": p["loja"],
-                "titulo": p["titulo"], "cupom": cod, "link": p["link"]}
+                "titulo": p["titulo"], "cupom": cod, "link": p["link"],
+                "desconto_txt": f"-{pct_:.0f}% · {de_onde}" if pct_ else None,
+                "temperatura": p["temperatura"]}
         (alta if r.get("prioridade") == "alta" else normal).append(item)
         novos_ids.append(p["id"])
         log(f"AVISO [{r.get('prioridade', 'normal')}] {r['nome']} {reais(p['preco'])} {p['loja']} "

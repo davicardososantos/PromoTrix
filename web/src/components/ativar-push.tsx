@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Sino } from "@/components/icones";
 
 /** Converte a chave pública VAPID (base64url) em bytes para o pushManager. */
 function chaveEmBytes(base64: string): Uint8Array {
@@ -12,10 +13,10 @@ function chaveEmBytes(base64: string): Uint8Array {
 
 type Estado = "carregando" | "desligado" | "ligado" | "bloqueado" | "sem-suporte" | "erro" | "ativando";
 
-/** Botão para receber no celular as promoções de prioridade alta (Web Push). */
+/** Receber no celular as promoções de prioridade alta (Web Push). */
 export function AtivarPush() {
   const [estado, setEstado] = useState<Estado>("carregando");
-  const [teste, setTeste] = useState<string>("");
+  const [teste, setTeste] = useState("");
 
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return setEstado("sem-suporte");
@@ -51,33 +52,43 @@ export function AtivarPush() {
   async function testar() {
     setTeste("Enviando...");
     const r = await fetch("/api/push/teste", { method: "POST" }).then((x) => x.json()).catch(() => null);
-    setTeste(r?.entregues ? "Enviado! Veja a notificação." : "Não chegou em nenhum aparelho.");
+    setTeste(r?.entregues ? "Enviado. Veja a notificação." : "Não chegou em nenhum aparelho.");
   }
 
   if (estado === "carregando") return null;
   if (estado === "sem-suporte")
     return (
-      <p className="suave">
-        Este aparelho não recebe notificação do navegador. No iPhone, instale o app pela opção &quot;Adicionar à Tela
-        de Início&quot; do Safari e abra por lá.
-      </p>
+      <div className="push">
+        <Sino />
+        <span>
+          Este navegador não recebe notificação. No iPhone, instale pelo Safari em <b>Adicionar à Tela de Início</b> e
+          abra por lá.
+        </span>
+      </div>
     );
   if (estado === "ligado")
     return (
-      <p className="suave">
-        Notificações ligadas neste aparelho.{" "}
-        <button className="botao secundario" onClick={testar}>
+      <div className="push">
+        <Sino />
+        <span style={{ flex: 1 }}>
+          <b>Notificações ligadas</b> neste aparelho para as promoções importantes.
+        </span>
+        <button className="btn btn-secundario" onClick={testar}>
           Mandar teste
-        </button>{" "}
-        {teste}
-      </p>
+        </button>
+        {teste && <span>{teste}</span>}
+      </div>
     );
   return (
-    <div className="faixa">
-      <button className="botao" onClick={ativar} disabled={estado === "ativando"}>
-        {estado === "ativando" ? "Ativando..." : "Receber as promoções importantes neste celular"}
+    <div className="push">
+      <Sino />
+      <span style={{ flex: 1 }}>
+        Receba as <b>promoções importantes</b> neste celular, na hora.
+      </span>
+      <button className="btn btn-marca" onClick={ativar} disabled={estado === "ativando"}>
+        {estado === "ativando" ? "Ativando..." : "Ativar notificações"}
       </button>
-      {estado === "bloqueado" && <p className="erro">Notificações bloqueadas. Libere nas configurações do navegador.</p>}
+      {estado === "bloqueado" && <p className="erro">Bloqueadas. Libere nas configurações do navegador.</p>}
       {estado === "erro" && <p className="erro">Não deu para ativar agora. Tente de novo.</p>}
     </div>
   );

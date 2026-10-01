@@ -16,6 +16,15 @@
       "preco_max": 300
     },
     {
+      "grupo": "Celular",
+      "nome": "Um modelo específico com 15% ou mais",
+      "prioridade": "alta",
+      "precisa": ["galaxy", "a57", "256"],
+      "nao_pode": ["capa", "pelicula"],
+      "preco_referencia": 2299,
+      "desconto_min": 15
+    },
+    {
       "grupo": "Presentes",
       "nome": "LEGO até R$ 100 bem votado",
       "prioridade": "normal",

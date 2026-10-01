@@ -19,6 +19,9 @@ const coletaSchema = z.object({
       regra_id: z.string().nullable().optional(),
       regra_nome: z.string(),
       cupom: z.string().nullable().optional(),
+      imagem: z.string().url().nullable().optional(),
+      desconto: z.number().nullable().optional(),
+      desconto_origem: z.string().max(120).nullable().optional(),
     }),
   ),
   novos: z.array(z.string()).default([]),
@@ -54,6 +57,9 @@ export async function POST(req: Request) {
       regraId: regra?.id ?? null,
       ultimaVez: agora,
       ultimaColetaId: coleta.id,
+      imagem: p.imagem ?? null,
+      desconto: p.desconto ?? null,
+      descontoOrigem: p.desconto_origem ?? null,
       ...(p.cupom ? { cupom: p.cupom } : {}),
       ...(novosSet.has(p.id) ? { avisadaEm: agora } : {}),
     };
@@ -64,7 +70,7 @@ export async function POST(req: Request) {
     });
     if (novosSet.has(p.id) && regra?.prioridade === "alta") {
       pushes += await avisarCelulares({
-        title: `${regra.nome}: ${reais(p.preco)}`,
+        title: `${regra.nome}: ${reais(p.preco)}${p.desconto ? ` (-${Math.round(p.desconto)}%)` : ""}`,
         body: `${p.loja} · ${p.titulo}${p.cupom ? ` · cupom ${p.cupom}` : ""}`,
         url: p.link,
         tag: `promotrix-${p.id}`,

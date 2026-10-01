@@ -65,10 +65,26 @@ cair o coletor continua usando ela.
 | `nao_pode` | Nenhum destes pode aparecer no título (acessórios, capas, voltagem errada...) |
 | `preco_min` / `preco_max` | Faixa de preço em reais, já com desconto |
 | `temperatura_min` | Mínimo de votos (°) no Pelando, um filtro de "promoção boa de verdade" |
+| `preco_referencia` | Preço normal do produto na loja (para regra de **um produto só**). Serve para calcular o % de desconto e liga o selo "Menor preço" |
+| `desconto_min` | Só bate se o desconto conhecido for pelo menos este % |
 | `ate` | `AAAA-MM-DD`: a regra (ou busca) para sozinha depois dessa data |
 
 A comparação ignora maiúsculas e acentos. A primeira regra que bater vence. Cada promoção avisa uma
 vez, e só avisa de novo se o preço cair.
+
+### De onde vem o % de desconto
+
+O Pelando não guarda o preço "de" (antes do desconto), e as lojas bloqueiam leitura automática. Por
+isso o PromoTrix **não inventa** porcentagem: ele usa a maior entre estas fontes, quando existem, e
+mostra a origem no selo.
+
+1. O desconto que o Pelando informa (vem preenchido em ofertas de cupom).
+2. Um "X% OFF" ou "X% de desconto" escrito no título da oferta.
+3. O `preco_referencia` da regra: `(normal - preço) / normal`.
+
+Sem nenhuma delas, a oferta aparece sem %. A faixa **Grandes oportunidades** do painel junta o que tem
+15% ou mais de desconto, 300° ou mais no Pelando, ou o menor preço já visto (com pelo menos 3 ofertas
+no histórico de uma regra de produto único).
 
 ## Painel web (`web/`)
 
@@ -83,7 +99,8 @@ npm run admin                 # cria o primeiro usuário
 npm run dev                   # http://localhost:3000
 ```
 
-Telas: **Painel** (o que a última coleta achou, por grupo), **Regras** (editar produtos, alvos e
+Telas: **Painel** (grandes oportunidades no topo e, abaixo, o que a última coleta achou, por grupo,
+com foto, % de desconto e votos), **Regras** (editar produtos, alvos e
 buscas), **Histórico** (tudo o que já bateu em cada regra e o menor preço visto). No celular, o painel
 pode ser instalado como app (PWA). O botão "Receber as promoções importantes neste celular" liga o
 push. No iPhone, isso só funciona com o app adicionado à tela de início.
