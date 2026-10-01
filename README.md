@@ -1,0 +1,121 @@
+# PromoTrix
+
+Caçador de promoções. Um **coletor no PC (Windows)** lê o [Pelando](https://www.pelando.com.br) de tempos
+em tempos e **avisa na tela** quando aparece uma promoção ativa dentro do preço que você definiu. Um
+**painel web** (Next.js) guarda o histórico de preços, deixa editar os produtos e alvos pelo celular e
+manda **notificação push** das promoções importantes.
+
+```
+            PC (Windows) — coletor/                         Servidor — web/
+  ┌──────────────────────────────────────────┐        ┌───────────────────────────────┐
+  │ a cada 30 min (Agendador de Tarefas)     │  GET   │ /api/coletor/config            │
+  │ 1. busca as regras ──────────────────────┼───────▶│   buscas e regras (SQLite)     │
+  │ 2. lê o Pelando (internet de casa)       │        │                               │
+  │ 3. confere as regras                     │  POST  │ /api/coletor/coleta            │
+  │ 4. janela grande na tela (alta)          ├───────▶│   histórico + push no celular  │
+  │ 5. envia o que encontrou                 │        │ painel · regras · histórico    │
+  └──────────────────────────────────────────┘        └───────────────────────────────┘
+```
+
+**Por que a leitura acontece no PC, e não no servidor:** o Pelando fica atrás da Cloudflare, que mostra
+a tela "Just a moment…" (erro 403) para IPs de data center. Da internet de casa, a página pública
+responde normalmente. O Mercado Livre e a Amazon bloqueiam leitura automática até de casa (login e
+captcha), e o Pelando já traz as promoções deles, com o cupom, poucos minutos depois de aparecerem.
+
+O coletor também funciona **sozinho**, sem o painel web: aí as regras ficam no `coletor/config.json`
+e o painel vira um `painel.html` local.
+
+## Estrutura
+
+| Pasta | O que é |
+|---|---|
+| `coletor/` | Python 3.10+, só a biblioteca padrão. `promotrix.py` (coleta e regras), `alerta.py` (janela com tkinter), `instalar-tarefa.ps1` (Agendador de Tarefas) |
+| `web/` | Next.js 15 + Prisma (SQLite) + Auth.js + Web Push. Docker e deploy por GitHub Actions + SSH |
+| `.github/workflows/deploy.yml` | Deploy do `web/` numa VPS por SSH a cada push na `main` |
+
+## Coletor (Windows)
+
+```powershell
+cd coletor
+copy config.example.json config.json      # buscas e regras (modo sozinho)
+python promotrix.py --listar              # o que bate nas regras agora
+python promotrix.py --teste               # mostra a janela de alerta
+powershell -ExecutionPolicy Bypass -File instalar-tarefa.ps1   # 2 min após o logon e a cada 30 min
+```
+
+Para ligar ao painel web, copie `servidor.example.json` para `servidor.json`, com a URL e o
+`COLETOR_TOKEN` do servidor. Depois mande as suas regras uma vez:
+
+```powershell
+python promotrix.py --enviar-config            # só funciona com o banco vazio
+python promotrix.py --enviar-config --substituir
+```
+
+A partir daí, as regras vêm do servidor. A última cópia fica em `config-cache.json`, e se o servidor
+cair o coletor continua usando ela.
+
+### Regras
+
+| Campo | O que faz |
+|---|---|
+| `grupo`, `nome` | Seção do painel e nome do alerta |
+| `prioridade` | `alta`: janela grande na tela + push no celular. `normal`: só painel e uma notificação discreta |
+| `precisa` | **Todos** estes termos têm de aparecer no título ou no nome da loja |
+| `qualquer` | Pelo menos **um** destes termos tem de aparecer |
+| `nao_pode` | Nenhum destes pode aparecer no título (acessórios, capas, voltagem errada...) |
+| `preco_min` / `preco_max` | Faixa de preço em reais, já com desconto |
+| `temperatura_min` | Mínimo de votos (°) no Pelando, um filtro de "promoção boa de verdade" |
+| `ate` | `AAAA-MM-DD`: a regra (ou busca) para sozinha depois dessa data |
+
+A comparação ignora maiúsculas e acentos. A primeira regra que bater vence. Cada promoção avisa uma
+vez, e só avisa de novo se o preço cair.
+
+## Painel web (`web/`)
+
+Rodar localmente:
+
+```bash
+cd web
+cp .env.example .env          # preencha AUTH_SECRET, COLETOR_TOKEN, ADMIN_*, VAPID (npm run vapid)
+npm install
+npx prisma migrate dev        # cria o banco SQLite
+npm run admin                 # cria o primeiro usuário
+npm run dev                   # http://localhost:3000
+```
+
+Telas: **Painel** (o que a última coleta achou, por grupo), **Regras** (editar produtos, alvos e
+buscas), **Histórico** (tudo o que já bateu em cada regra e o menor preço visto). No celular, o painel
+pode ser instalado como app (PWA). O botão "Receber as promoções importantes neste celular" liga o
+push. No iPhone, isso só funciona com o app adicionado à tela de início.
+
+### Deploy (VPS com Docker)
+
+O `docker-compose.yml` sobe o projeto isolado:
+- containers `promotrix_*`, com rede e volume próprios;
+- banco SQLite no volume;
+- porta `APP_PORT`, que por padrão é 3200.
+
+O `scripts/deploy.sh` segue esta ordem: build, migrations com o app antigo ainda no ar, recriação dos
+containers e healthcheck. Se a migration falhar, o app antigo continua servindo.
+
+1. No servidor, crie `DEPLOY_PATH/.env` a partir do `.env.example`, com chaves novas.
+2. No GitHub, em *Settings → Secrets → Actions*, cadastre `HOSTINGER_IP`, `SSH_USER`, `SSH_PORT`,
+   `SSH_PRIVATE_KEY` e `DEPLOY_PATH`.
+3. Faça push na `main`, ou rode o workflow à mão em *Actions*.
+4. Publique a porta: por um proxy reverso, ou por um Cloudflare Tunnel apontando o domínio para
+   `http://<host>:APP_PORT`.
+
+## Limites e boas maneiras
+
+- O coletor só funciona com o **PC ligado e o usuário logado**. Promoção que aparece e acaba com o PC
+  desligado é perdida. O painel avisa quando a última coleta passou de 2 horas.
+- Ele lê uma página pública: mantenha 30 minutos ou mais de intervalo, poucas buscas e a pausa entre
+  elas (`pausa_entre_buscas_s`). É uma ferramenta de uso pessoal.
+- **Não tente rodar o coletor no servidor contornando a proteção da Cloudflare.**
+
+## Se parar de funcionar
+
+Se o Pelando mudar a página, o coletor avisa uma vez por dia ("parou de ler o Pelando"). Ele procura
+cada promoção pelo trecho `"id":[0,"<uuid>"],"slug":` e lê os campos no formato `"campo":[0,valor]`.
+Isso fica em `INICIO` e `campo()`, no `coletor/promotrix.py`. O cupom vem da página da promoção
+(`/d/<slug>`), no atributo `data-code`. Os erros vão para o `coletor/promotrix.log`.

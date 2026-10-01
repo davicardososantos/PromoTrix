@@ -1,0 +1,89 @@
+// PromoTrix — banco SQLite próprio (arquivo num volume Docker), isolado dos bancos dos outros
+// projetos do servidor. Listas de termos (precisa/qualquer/naoPode) ficam como JSON em texto.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String             @id @default(cuid())
+  email        String             @unique
+  nome         String
+  passwordHash String
+  criadoEm     DateTime           @default(now())
+  pushes       PushSubscription[]
+}
+
+/// Termo pesquisado no Pelando pelo coletor do PC.
+model Busca {
+  id    String  @id @default(cuid())
+  termo String
+  ate   String? /// AAAA-MM-DD: depois disso a busca para sozinha
+  ativa Boolean @default(true)
+  ordem Int     @default(0)
+}
+
+/// Regra que decide o que avisa. A primeira que bater vence (ordem).
+model Regra {
+  id             String     @id @default(cuid())
+  grupo          String
+  nome           String
+  prioridade     String     @default("normal") /// "alta" (janela grande + push) ou "normal" (painel)
+  precisa        String     @default("[]")
+  qualquer       String     @default("[]")
+  naoPode        String     @default("[]")
+  precoMin       Float?
+  precoMax       Float?
+  temperaturaMin Float?
+  ate            String?
+  ativa          Boolean    @default(true)
+  ordem          Int        @default(0)
+  promocoes      Promocao[]
+}
+
+/// Cada envio do coletor do PC.
+model Coleta {
+  id     String   @id @default(cuid())
+  em     DateTime @default(now())
+  lidas  Int
+  dentro Int
+  novos  Int
+}
+
+/// Promoção do Pelando que bateu numa regra (o id é o do Pelando).
+model Promocao {
+  id             String    @id
+  titulo         String
+  preco          Float?
+  loja           String
+  temperatura    Float     @default(0)
+  postadaEm      DateTime?
+  link           String
+  cupom          String?
+  regraId        String?
+  regra          Regra?    @relation(fields: [regraId], references: [id], onDelete: SetNull)
+  primeiraVez    DateTime  @default(now())
+  ultimaVez      DateTime  @default(now())
+  ultimaColetaId String?
+  avisadaEm      DateTime?
+
+  @@index([regraId])
+  @@index([ultimaColetaId])
+}
+
+model PushSubscription {
+  id       String   @id @default(cuid())
+  userId   String
+  endpoint String   @unique
+  p256dh   String
+  auth     String
+  criadoEm DateTime @default(now())
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

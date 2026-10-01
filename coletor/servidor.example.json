@@ -1,0 +1,5 @@
+{
+  "_leia": "Copie para servidor.json para ligar o coletor ao painel web. O token é o COLETOR_TOKEN do .env do servidor.",
+  "url": "https://promotrix.seudominio.com.br",
+  "token": "cole-aqui-o-COLETOR_TOKEN"
+}

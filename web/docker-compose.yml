@@ -1,0 +1,57 @@
+# PromoTrix — painel web na VPS.
+# Isolado dos outros stacks do servidor (nutrix/fintrix/codetrix/nginx-proxy-manager):
+# banco SQLite num volume próprio, rede própria, prefixo promotrix_ e porta por .env (padrão 3200).
+
+services:
+  # One-shot: aplica as migrations e cria o primeiro usuário (se ainda não houver nenhum).
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    container_name: promotrix_migrate
+    restart: "no"
+    user: "1001:1001"
+    environment:
+      DATABASE_URL: "file:/data/promotrix.db"
+      HOME: /tmp
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_NOME: ${ADMIN_NOME:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    command: ["sh", "-c", "npx prisma migrate deploy && node scripts/garantir-admin.mjs"]
+    volumes:
+      - promotrix_data:/data
+    networks:
+      - promotrix_net
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: promotrix_app
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: "file:/data/promotrix.db"
+      AUTH_SECRET: ${AUTH_SECRET:?defina AUTH_SECRET no .env}
+      AUTH_TRUST_HOST: "true"
+      COLETOR_TOKEN: ${COLETOR_TOKEN:?defina COLETOR_TOKEN no .env}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:promotrix@example.com}
+      NODE_ENV: production
+    ports:
+      - "${APP_PORT:-3200}:3000"
+    volumes:
+      - promotrix_data:/data
+    networks:
+      - promotrix_net
+
+volumes:
+  promotrix_data:
+
+networks:
+  promotrix_net:
+    name: promotrix_net

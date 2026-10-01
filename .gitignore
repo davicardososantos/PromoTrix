@@ -1,0 +1,19 @@
+# Coletor: dados pessoais e arquivos gerados ficam só no PC
+coletor/config.json
+coletor/config-cache.json
+coletor/servidor.json
+coletor/estado.json
+coletor/painel.html
+coletor/alerta-*.json
+*.log
+__pycache__/
+
+# Web
+web/node_modules/
+web/.next/
+web/.env
+web/.env.local
+web/prisma/*.db
+web/prisma/*.db-journal
+web/next-env.d.ts
+web/tsconfig.tsbuildinfo

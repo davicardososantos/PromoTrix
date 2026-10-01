@@ -1,0 +1,36 @@
+{
+  "_leia": "Copie este arquivo para config.json e ajuste. 'buscas' são os termos pesquisados no Pelando; 'regras' decidem o que avisa. A primeira regra que bater vence.",
+  "pausa_entre_buscas_s": 1.5,
+  "buscas": [
+    {"termo": "air fryer"},
+    {"termo": "lego", "ate": "2026-12-20"}
+  ],
+  "regras": [
+    {
+      "grupo": "Cozinha",
+      "nome": "Air fryer até R$ 300",
+      "prioridade": "alta",
+      "precisa": ["air fryer"],
+      "nao_pode": ["forma", "papel", "acessorio"],
+      "preco_min": 150,
+      "preco_max": 300
+    },
+    {
+      "grupo": "Presentes",
+      "nome": "LEGO até R$ 100 bem votado",
+      "prioridade": "normal",
+      "ate": "2026-12-20",
+      "precisa": ["lego"],
+      "preco_min": 30,
+      "preco_max": 100,
+      "temperatura_min": 100
+    },
+    {
+      "grupo": "Roupas",
+      "nome": "Cupons de uma loja",
+      "prioridade": "normal",
+      "precisa": ["nome da loja"],
+      "qualquer": ["cupom", "off", "%", "desconto"]
+    }
+  ]
+}

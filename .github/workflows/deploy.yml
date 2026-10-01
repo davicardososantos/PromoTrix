@@ -1,0 +1,80 @@
+name: Deploy do painel (Hostinger VPS)
+
+# Só o painel web vai para o servidor. O coletor roda no PC (o Pelando bloqueia IP de data center).
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-promotrix
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.HOSTINGER_IP }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+    steps:
+      - name: Conferir se os secrets do servidor existem
+        id: secrets
+        run: |
+          if [ -z "$SSH_HOST" ] || [ -z "$DEPLOY_PATH" ]; then
+            echo "::notice::Secrets do servidor não cadastrados (HOSTINGER_IP, DEPLOY_PATH...). Deploy pulado."
+            echo "pronto=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "pronto=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout do código
+        if: steps.secrets.outputs.pronto == 'true'
+        uses: actions/checkout@v4
+
+      - name: Configurar SSH
+        if: steps.secrets.outputs.pronto == 'true'
+        env:
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          cat > ~/.ssh/config <<EOF
+          Host deploy
+            HostName $SSH_HOST
+            User $SSH_USER
+            Port ${SSH_PORT:-22}
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking accept-new
+            BatchMode yes
+            ConnectTimeout 15
+            ServerAliveInterval 15
+            ServerAliveCountMax 4
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Testar conexão SSH (com retry)
+        if: steps.secrets.outputs.pronto == 'true'
+        run: |
+          for i in 1 2 3 4 5; do
+            if ssh deploy 'echo "Conectado como $(whoami) em $(hostname)"'; then exit 0; fi
+            echo "Tentativa $i falhou; aguardando 15s..." >&2
+            sleep 15
+          done
+          exit 1
+
+      - name: Enviar o painel para o servidor (rsync)
+        if: steps.secrets.outputs.pronto == 'true'
+        run: |
+          rsync -az --delete \
+            --exclude='node_modules' --exclude='.next' --exclude='.env' \
+            --exclude='prisma/*.db' --exclude='prisma/*.db-journal' \
+            -e ssh ./web/ "deploy:${DEPLOY_PATH}/"
+
+      - name: Deploy (build → migrations → recria → healthcheck)
+        if: steps.secrets.outputs.pronto == 'true'
+        run: ssh deploy "cd '${DEPLOY_PATH}' && sh scripts/deploy.sh"
