@@ -51,6 +51,10 @@ python promotrix.py --enviar-config            # só funciona com o banco vazio
 python promotrix.py --enviar-config --substituir
 ```
 
+Com `--substituir`, regras e buscas casam pelo nome/termo: as que continuam são atualizadas no lugar
+(o histórico de preços e o liga/desliga ficam), as novas são criadas e só as que saíram do arquivo são
+apagadas.
+
 A partir daí, as regras vêm do servidor. A última cópia fica em `config-cache.json`, e se o servidor
 cair o coletor continua usando ela.
 

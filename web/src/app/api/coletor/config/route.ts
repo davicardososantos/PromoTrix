@@ -32,7 +32,9 @@ const configSchema = z.object({
 
 /**
  * Importa um config.json do coletor (`python promotrix.py --enviar-config`).
- * Só substitui o que já existe com ?substituir=1, para não apagar regras editadas no painel.
+ * Só mexe no que já existe com ?substituir=1, para não apagar regras editadas no painel.
+ * Regras e buscas casam pelo nome/termo: as que continuam são atualizadas no lugar (o histórico de
+ * preços e o liga/desliga ficam), as novas são criadas e só as que saíram do arquivo são apagadas.
  */
 export async function PUT(req: Request) {
   if (!tokenValido(req)) return NextResponse.json({ erro: "token inválido" }, { status: 401 });
@@ -45,29 +47,40 @@ export async function PUT(req: Request) {
   }
 
   const { buscas, regras } = dados.data;
+  const [regrasAtuais, buscasAtuais] = await Promise.all([prisma.regra.findMany(), prisma.busca.findMany()]);
+  const regraPorNome = new Map(regrasAtuais.map((r) => [r.nome, r.id]));
+  const buscaPorTermo = new Map(buscasAtuais.map((b) => [b.termo, b.id]));
+  const nomes = new Set(regras.map((r) => r.nome));
+  const termosNovos = new Set(buscas.map((b) => b.termo));
+
   await prisma.$transaction([
-    prisma.busca.deleteMany(),
-    prisma.regra.deleteMany(),
-    ...buscas.map((b, i) => prisma.busca.create({ data: { termo: b.termo, ate: b.ate ?? null, ordem: i } })),
-    ...regras.map((r, i) =>
-      prisma.regra.create({
-        data: {
-          grupo: r.grupo,
-          nome: r.nome,
-          prioridade: r.prioridade,
-          precisa: JSON.stringify(r.precisa),
-          qualquer: JSON.stringify(r.qualquer),
-          naoPode: JSON.stringify(r.nao_pode),
-          precoMin: r.preco_min ?? null,
-          precoMax: r.preco_max ?? null,
-          temperaturaMin: r.temperatura_min ?? null,
-          precoReferencia: r.preco_referencia ?? null,
-          descontoMin: r.desconto_min ?? null,
-          ate: r.ate ?? null,
-          ordem: i,
-        },
-      }),
-    ),
+    prisma.regra.deleteMany({ where: { nome: { notIn: [...nomes] } } }),
+    prisma.busca.deleteMany({ where: { termo: { notIn: [...termosNovos] } } }),
+    ...buscas.map((b, i) => {
+      const data = { termo: b.termo, ate: b.ate ?? null, ordem: i };
+      const id = buscaPorTermo.get(b.termo);
+      return id ? prisma.busca.update({ where: { id }, data }) : prisma.busca.create({ data });
+    }),
+    ...regras.map((r, i) => {
+      const data = {
+        grupo: r.grupo,
+        nome: r.nome,
+        prioridade: r.prioridade,
+        precisa: JSON.stringify(r.precisa),
+        qualquer: JSON.stringify(r.qualquer),
+        naoPode: JSON.stringify(r.nao_pode),
+        precoMin: r.preco_min ?? null,
+        precoMax: r.preco_max ?? null,
+        temperaturaMin: r.temperatura_min ?? null,
+        precoReferencia: r.preco_referencia ?? null,
+        descontoMin: r.desconto_min ?? null,
+        ate: r.ate ?? null,
+        ordem: i,
+      };
+      const id = regraPorNome.get(r.nome);
+      return id ? prisma.regra.update({ where: { id }, data }) : prisma.regra.create({ data });
+    }),
   ]);
-  return NextResponse.json({ ok: true, buscas: buscas.length, regras: regras.length });
+  const mantidas = regras.filter((r) => regraPorNome.has(r.nome)).length;
+  return NextResponse.json({ ok: true, buscas: buscas.length, regras: regras.length, mantidas, novas: regras.length - mantidas });
 }
