@@ -37,6 +37,8 @@ services:
       DATABASE_URL: "file:/data/promotrix.db"
       AUTH_SECRET: ${AUTH_SECRET:?defina AUTH_SECRET no .env}
       AUTH_TRUST_HOST: "true"
+      # Endereço público (https). Atrás de Cloudflare + proxy o app não deduz o https sozinho.
+      AUTH_URL: ${AUTH_URL:-}
       COLETOR_TOKEN: ${COLETOR_TOKEN:?defina COLETOR_TOKEN no .env}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
