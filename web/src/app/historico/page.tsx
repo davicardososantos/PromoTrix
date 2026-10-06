@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { Topo } from "@/components/topo";
+import { Sparkline } from "@/components/sparkline";
 import { quando, reais } from "@/lib/formato";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +9,13 @@ export const dynamic = "force-dynamic";
 export default async function Historico() {
   const regras = await prisma.regra.findMany({
     orderBy: { ordem: "asc" },
-    include: { promocoes: { orderBy: { primeiraVez: "desc" }, take: 30 } },
+    include: {
+      promocoes: {
+        orderBy: { primeiraVez: "desc" },
+        take: 30,
+        include: { precos: { orderBy: { em: "asc" }, take: 120 } },
+      },
+    },
   });
 
   return (
@@ -49,7 +56,10 @@ export default async function Historico() {
                         {p.cupom ? ` · cupom ${p.cupom}` : ""}
                       </small>
                     </div>
-                    {p.preco != null && maior ? (
+                    {/* Oferta que mudou de preço mostra a curva; a barra compara com as outras ofertas da regra. */}
+                    {p.precos.length > 1 ? (
+                      <Sparkline precos={p.precos} />
+                    ) : p.preco != null && maior ? (
                       <div className="barra">
                         <span style={{ width: `${Math.max(4, (p.preco / maior) * 100)}%` }} />
                       </div>

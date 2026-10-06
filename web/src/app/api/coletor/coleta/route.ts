@@ -68,6 +68,14 @@ export async function POST(req: Request) {
       create: { id: p.id, postadaEm, primeiraVez: agora, ...comum },
       update: comum,
     });
+    // Série de preços do painel. Só grava quando muda: uma passagem lida de 4 em 4 horas passa a
+    // maior parte do tempo no mesmo valor, e um ponto por leitura só encheria o gráfico de repetição.
+    if (p.preco != null) {
+      const ultimo = await prisma.preco.findFirst({ where: { promocaoId: p.id }, orderBy: { em: "desc" } });
+      if (ultimo?.valor !== p.preco) {
+        await prisma.preco.create({ data: { promocaoId: p.id, valor: p.preco, em: agora } });
+      }
+    }
     if (novosSet.has(p.id) && regra?.prioridade === "alta") {
       pushes += await avisarCelulares({
         title: `${regra.nome}: ${reais(p.preco)}${p.desconto ? ` (-${Math.round(p.desconto)}%)` : ""}`,

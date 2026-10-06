@@ -486,7 +486,9 @@ def main():
         regra = next((r for r in regras_pelando if bate(p, r)), None)
         if regra:
             ativas.append((regra, p))
-    ativas += [(r, o) for r, o in passagens(regras_voo, estado) if bate(o, r)]
+    # Passagem entra no painel mesmo cara, para o site acompanhar o preço subir e descer. O alvo da
+    # regra decide só o aviso, mais abaixo.
+    ativas += passagens(regras_voo, estado)
 
     if "--listar" in args:
         for r, p in sorted(ativas, key=lambda x: (x[0]["grupo"], x[1]["preco"] or 0)):
@@ -499,6 +501,8 @@ def main():
 
     alta, normal, novos_ids = [], [], []
     for r, p in sorted(ativas, key=lambda x: x[1]["preco"] or 0):
+        if r.get("voo") and not bate(p, r):
+            continue  # passagem acima do alvo: fica no painel e no histórico, mas não avisa
         ja = avisados.get(p["id"])
         if ja and (p["preco"] is None or ja.get("preco") is None or p["preco"] >= ja["preco"]):
             continue

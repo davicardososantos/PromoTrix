@@ -117,9 +117,13 @@ Uma regra com o bloco `voo` para de procurar no Pelando e passa a acompanhar o p
 ```
 
 Para cada destino em cada data, ele guarda **o voo mais barato** dentro do limite de paradas. Assim o
-histórico do painel vira a série de preços daquele dia, e o alerta dispara quando o dia fica mais
-barato — a mesma regra das promoções: avisa uma vez, e só de novo se o preço cair. `preco_max` e
-`preco_referencia` valem igual; os campos de termo e de votos não valem para passagem.
+histórico do painel vira a série de preços daquele dia.
+
+Passagem é acompanhada **sempre**, por qualquer preço: ela aparece no painel e no histórico desde a
+primeira leitura, para dar para ver o preço subir e descer. O `preco_max` aqui é só o **alvo do
+aviso** — a janela no PC e o push só saem quando o trecho chega nele, e aí vale a mesma regra das
+promoções: avisa uma vez, e só de novo se o preço cair. Os campos de termo e de votos não valem para
+passagem; `preco_referencia` vale igual.
 
 A busca não é uma API: ela vai num parâmetro `tfs`, um protobuf em base64 que o `coletor/voos.py`
 monta à mão, e a página de resultados já vem pronta no HTML — não precisa de navegador nem de login.
@@ -146,7 +150,11 @@ npm run dev                   # http://localhost:3000
 
 Telas: **Painel** (grandes oportunidades no topo e, abaixo, o que a última coleta achou, por grupo,
 com foto, % de desconto e votos), **Regras** (editar produtos, alvos e
-buscas), **Histórico** (tudo o que já bateu em cada regra e o menor preço visto). No celular, o painel
+buscas), **Histórico** (tudo o que já bateu em cada regra e o menor preço visto).
+
+Oferta que já mudou de preço ganha, nas duas telas, a **curva do preço** com quanto subiu ou desceu
+desde a primeira leitura e o menor valor visto. É o que deixa acompanhar uma passagem pelo site. Os
+pontos ficam na tabela `Preco`, gravados só quando o valor muda. No celular, o painel
 pode ser instalado como app (PWA). O botão "Receber as promoções importantes neste celular" liga o
 push. No iPhone, isso só funciona com o app adicionado à tela de início.
 

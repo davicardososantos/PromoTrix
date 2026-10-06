@@ -1,9 +1,10 @@
-import type { Promocao, Regra } from "@prisma/client";
+import type { Preco, Promocao, Regra } from "@prisma/client";
 import { CopiarCupom } from "@/components/copiar-cupom";
 import { Chama, Imagem, Seta } from "@/components/icones";
+import { Sparkline } from "@/components/sparkline";
 import { haQuanto, reais } from "@/lib/formato";
 
-export type PromoComRegra = Promocao & { regra: Regra | null };
+export type PromoComRegra = Promocao & { regra: Regra | null; precos?: Preco[] };
 
 /** Cartão de uma promoção: foto, selos (desconto, novo, menor preço, votos), preço e ações. */
 export function CartaoPromo({ p, novo, menorPreco }: { p: PromoComRegra; novo: boolean; menorPreco: boolean }) {
@@ -51,6 +52,7 @@ export function CartaoPromo({ p, novo, menorPreco }: { p: PromoComRegra; novo: b
         {/* O preço riscado já explica o desconto pelo preço normal; os outros casos (cupom, título, e
             o que o Google diz do trecho nas passagens) ganham a origem escrita. */}
         {p.descontoOrigem && !mostraAntigo ? <span className="origem">{p.descontoOrigem}</span> : null}
+        {p.precos && <Sparkline precos={p.precos} />}
         <span className="promo-meta">
           {p.loja}
           {p.postadaEm ? ` · postada ${haQuanto(p.postadaEm)}` : ""}

@@ -28,7 +28,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
   const promos: PromoComRegra[] = ultima
     ? await prisma.promocao.findMany({
         where: { ultimaColetaId: ultima.id },
-        include: { regra: true },
+        include: { regra: true, precos: { orderBy: { em: "asc" }, take: 120 } },
         orderBy: { preco: "asc" },
       })
     : [];

@@ -83,9 +83,22 @@ model Promocao {
   ultimaVez      DateTime  @default(now())
   ultimaColetaId String?
   avisadaEm      DateTime?
+  precos         Preco[]
 
   @@index([regraId])
   @@index([ultimaColetaId])
+}
+
+/// Um preço lido numa coleta. Só grava quando muda de valor, senão a série de uma passagem lida de
+/// 4 em 4 horas viraria uma fila de pontos iguais. É o que o painel desenha no gráfico.
+model Preco {
+  id         String   @id @default(cuid())
+  promocaoId String
+  promocao   Promocao @relation(fields: [promocaoId], references: [id], onDelete: Cascade)
+  valor      Float
+  em         DateTime @default(now())
+
+  @@index([promocaoId, em])
 }
 
 model PushSubscription {
