@@ -8,6 +8,10 @@ confere cada promoção ATIVA com as regras e:
   - sempre: refaz o painel.html com tudo o que está valendo agora, separado por grupo.
 Cada promoção avisa uma vez. Só avisa de novo se o preço dela cair.
 
+Regra com um bloco "voo" não olha o Pelando: ela acompanha o preço de uma passagem aérea no Google
+Flights (voos.py) e segue pelo mesmo caminho. Como passagem não muda de preço de meia em meia hora,
+cada uma dessas regras tem o seu "intervalo_h".
+
 Com o painel web (pasta ../web) ligado, crie o servidor.json (veja servidor.example.json). Aí:
   - as buscas e regras vêm do servidor, onde dá pra editar pelo celular. A última cópia fica em
     config-cache.json, e o coletor segue funcionando se o servidor estiver fora;
@@ -18,6 +22,7 @@ Uso:
   python promotrix.py                              checa e avisa (o que a tarefa agendada faz)
   python promotrix.py --listar                     mostra o que bate nas regras agora, sem avisar nem gravar
   python promotrix.py --painel                     refaz o painel e abre no navegador
+  python promotrix.py --voos                       mostra os voos das regras de passagem, sem esperar o intervalo
   python promotrix.py --teste                      abre a janela de alerta com um exemplo
   python promotrix.py --enviar-config [--substituir]  manda o config.json local para o servidor
 """
@@ -35,6 +40,8 @@ import urllib.request
 import webbrowser
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import voos
 
 PASTA = Path(__file__).resolve().parent
 CONFIG = PASTA / "config.json"
@@ -154,12 +161,46 @@ def desconto(p, regra):
     return max(opcoes) if opcoes else (None, None)
 
 
+def origem_preco(p, regra):
+    """Igual a desconto(), mas a frase também traz o que o Google diz do trecho, nas passagens."""
+    pct, origem = desconto(p, regra)
+    if p.get("tendencia"):
+        origem = " · ".join(x for x in (origem, "Google: " + p["tendencia"]) if x)
+    return pct, origem
+
+
 def cupom(link):
     try:
         m = re.search(r'data-code="([^"]+)"', baixar(link))
         return m.group(1) if m else None
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------- passagens aéreas
+
+def passagens(regras, estado, forcar=False):
+    """Preço das regras com bloco "voo", lido no Google Flights (voos.py).
+
+    Passagem não muda de preço de meia em meia hora, e cada trecho é uma página de alguns MB: cada
+    regra só é relida depois do seu "intervalo_h". No meio disso o último preço fica guardado no
+    estado.json e continua valendo, para a passagem não sumir do painel entre duas leituras.
+    """
+    guardados = estado.setdefault("voos", {})
+    achadas = []
+    for r in regras:
+        chave = r.get("id") or r["nome"]
+        guardado = guardados.get(chave)
+        horas = r["voo"].get("intervalo_h", 4)
+        novo = forcar or not guardado or agora() - datetime.fromisoformat(guardado["em"]) >= timedelta(hours=horas)
+        if novo:
+            lidas = voos.ofertas(r, log)
+            if lidas:  # se todos os trechos falharem, segue com o preço anterior e tenta de novo depois
+                guardado = {"em": agora().isoformat(timespec="minutes"), "ofertas": lidas}
+                guardados[chave] = guardado
+        if guardado:
+            achadas += [(r, o) for o in guardado["ofertas"]]
+    return achadas
 
 
 # ---------------------------------------------------------------- servidor (painel web)
@@ -202,7 +243,7 @@ def enviar_coleta(lidas, ativas, novos_ids, cupons):
         return
     dentro = []
     for r, p in ativas:
-        pct, origem = desconto(p, r)
+        pct, origem = origem_preco(p, r)
         dentro.append({
             "id": p["id"], "titulo": p["titulo"], "preco": p["preco"], "loja": p["loja"],
             "temperatura": p["temperatura"], "criada": p["criada"], "link": p["link"],
@@ -240,6 +281,12 @@ def bate(p, r):
 
 def descrever_alvo(r):
     partes = []
+    if r.get("voo"):
+        v = r["voo"]
+        partes.append("+".join(v["origens"]) + " → " + ", ".join(v["destinos"]))
+        partes.append(" ou ".join(f"{d[8:10]}/{d[5:7]}" for d in v["datas"]))
+        if v.get("max_paradas") is not None:
+            partes.append("direto" if not v["max_paradas"] else f"até {v['max_paradas']} parada(s)")
     if "preco_max" in r:
         partes.append("até " + reais(r["preco_max"]))
     if "desconto_min" in r:
@@ -331,20 +378,28 @@ def gerar_painel(config, ativas, avisados, regras):
             novo = em and momento - datetime.fromisoformat(em) < timedelta(hours=24)
             cod = aviso.get("cupom")
             quando = datetime.fromisoformat(p["criada"].replace("Z", "+00:00")).astimezone(BRT) if p["criada"] else None
-            pct, origem = desconto(p, r)
+            pct, origem = origem_preco(p, r)
+            # Com foto, o -% vira selo em cima dela. Passagem não tem foto: aí o -% e a explicação
+            # (inclusive o que o Google diz do trecho) viram uma linha de texto.
             foto = ""
             if p.get("imagem"):
                 selo = f'<span class="off" title="{esc(origem)}">-{pct:.0f}%</span>' if pct else ""
                 foto = f'<div class="foto">{selo}<img src="{esc(p["imagem"])}" alt="" loading="lazy"></div>'
+                linha = ""
+            else:
+                linha = " · ".join(x for x in (f"-{pct:.0f}%" if pct else "", origem) if x)
             cartoes.append(
                 '<div class="cartao">' + foto
                 + ('<span class="novo">novo</span>' if novo else "")
                 + f'<span class="preco">{esc(reais(p["preco"]))}</span>'
                 + f'<span class="titulo">{esc(p["titulo"])}</span>'
                 + f'<span class="meta">{esc(p["loja"])} · {esc(r["nome"])}'
-                + (f" · postada {quando:%d/%m %H:%M}" if quando else "") + f' · {p["temperatura"]:.0f}°</span>'
+                + (f" · postada {quando:%d/%m %H:%M}" if quando else "")
+                + (f' · {p["temperatura"]:.0f}°' if p["temperatura"] else "") + "</span>"
+                + (f'<span class="meta">{esc(linha)}</span>' if linha else "")
                 + (f'<span class="meta">Cupom <span class="cupom">{esc(cod)}</span></span>' if cod else "")
-                + f'<a class="botao" href="{esc(p["link"])}" target="_blank">Ver no Pelando</a></div>')
+                + f'<a class="botao" href="{esc(p["link"])}" target="_blank">'
+                + ("Ver no Google Flights" if r.get("voo") else "Ver no Pelando") + "</a></div>")
         corpo = '<div class="grade">' + "".join(cartoes) + "</div>" if cartoes else '<p class="vazio">Nada ativo dentro do alvo agora.</p>'
         partes.append(f'<section><h2>{esc(g)}</h2><p class="regras">{resumo}</p>{corpo}</section>')
     PAINEL.write_text(
@@ -363,6 +418,19 @@ def main():
         abrir_alerta([{"regra": "Galaxy A57 256GB", "preco_txt": "R$ 1.889,00", "loja": "Mercado Livre",
                        "titulo": "Celular Samsung Galaxy A57 5G 256GB, 8GB RAM (exemplo)",
                        "cupom": "EXEMPLO10", "link": "https://www.pelando.com.br/"}], teste=True)
+        return
+    if "--voos" in args:  # inspeção: lê todos os trechos agora, sem o intervalo e sem gravar nada
+        config, _ = obter_config()
+        hoje = agora().strftime("%Y-%m-%d")
+        for r in [r for r in config["regras"] if r.get("voo") and vigente(r, hoje)]:
+            v = r["voo"]
+            print(f"\n{r['grupo']} · {r['nome']} · {descrever_alvo(r)}")
+            print(f"  {'+'.join(v['origens'])} → {', '.join(v['destinos'])} em {', '.join(v['datas'])}")
+            for o in voos.ofertas(r, log=lambda m: print("  !", m)):
+                pct = desconto(o, r)[0]
+                print(f"  {reais(o['preco']):>12} {(f'-{pct:.0f}%' if pct else ''):>5} {o['loja'][:12]:12} "
+                      f"{o['titulo']:58} {o['opcoes']:2} voos · {o['tendencia'] or '?'}"
+                      + ("" if bate(o, r) else "  — fora do alvo"))
         return
     if "--enviar-config" in args:
         if not servidor():
@@ -384,6 +452,10 @@ def main():
     hoje = agora().strftime("%Y-%m-%d")
     buscas = [b for b in config["buscas"] if vigente(b, hoje)]
     regras = [r for r in config["regras"] if vigente(r, hoje)]
+    # Regra de passagem não tem termo nenhum, então casaria com qualquer promoção do Pelando dentro do
+    # preço: ela fica fora do casamento do Pelando e é lida só pelo voos.py.
+    regras_voo = [r for r in regras if r.get("voo")]
+    regras_pelando = [r for r in regras if not r.get("voo")]
 
     todas, falhas = {}, 0
     for i, b in enumerate(buscas):
@@ -411,9 +483,10 @@ def main():
     for p in todas.values():
         if p["status"] != "active":
             continue
-        regra = next((r for r in regras if bate(p, r)), None)
+        regra = next((r for r in regras_pelando if bate(p, r)), None)
         if regra:
             ativas.append((regra, p))
+    ativas += [(r, o) for r, o in passagens(regras_voo, estado) if bate(o, r)]
 
     if "--listar" in args:
         for r, p in sorted(ativas, key=lambda x: (x[0]["grupo"], x[1]["preco"] or 0)):
@@ -429,12 +502,12 @@ def main():
         ja = avisados.get(p["id"])
         if ja and (p["preco"] is None or ja.get("preco") is None or p["preco"] >= ja["preco"]):
             continue
-        cod = cupom(p["link"])
+        cod = cupom(p["link"]) if not r.get("voo") else None  # passagem não tem cupom no Pelando
         avisados[p["id"]] = {"preco": p["preco"], "em": agora().isoformat(timespec="minutes"), "cupom": cod}
-        pct_, de_onde = desconto(p, r)
+        pct_, de_onde = origem_preco(p, r)
         item = {"regra": r["nome"], "preco_txt": reais(p["preco"]), "loja": p["loja"],
                 "titulo": p["titulo"], "cupom": cod, "link": p["link"],
-                "desconto_txt": f"-{pct_:.0f}% · {de_onde}" if pct_ else None,
+                "desconto_txt": f"-{pct_:.0f}% · {de_onde}" if pct_ else de_onde,
                 "temperatura": p["temperatura"]}
         (alta if r.get("prioridade") == "alta" else normal).append(item)
         novos_ids.append(p["id"])

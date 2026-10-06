@@ -10,6 +10,15 @@ export async function GET(req: Request) {
 }
 
 const termos = z.array(z.string()).default([]);
+const siglas = z.array(z.string().regex(/^[A-Z]{3}$/)).min(1);
+/** Trecho de passagem aérea: a regra deixa de olhar o Pelando e passa a ler o Google Flights. */
+const vooSchema = z.object({
+  origens: siglas,
+  destinos: siglas,
+  datas: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).min(1),
+  max_paradas: z.number().int().min(0).max(3).optional(),
+  intervalo_h: z.number().min(1).max(72).optional(),
+});
 const configSchema = z.object({
   buscas: z.array(z.object({ termo: z.string().min(1), ate: z.string().optional() })),
   regras: z.array(
@@ -25,6 +34,7 @@ const configSchema = z.object({
       temperatura_min: z.number().optional(),
       preco_referencia: z.number().optional(),
       desconto_min: z.number().optional(),
+      voo: vooSchema.optional(),
       ate: z.string().optional(),
     }),
   ),
@@ -74,6 +84,7 @@ export async function PUT(req: Request) {
         temperaturaMin: r.temperatura_min ?? null,
         precoReferencia: r.preco_referencia ?? null,
         descontoMin: r.desconto_min ?? null,
+        voo: r.voo ? JSON.stringify(r.voo) : null,
         ate: r.ate ?? null,
         ordem: i,
       };

@@ -28,3 +28,22 @@ export const lista = (json: string): string[] => {
     return [];
   }
 };
+
+/** Trecho de passagem aérea guardado como JSON em Regra.voo (ver coletor/voos.py). */
+export type Voo = {
+  origens: string[];
+  destinos: string[];
+  datas: string[];
+  max_paradas?: number;
+  intervalo_h?: number;
+};
+
+export function voo(json: string | null): Voo | null {
+  if (!json) return null;
+  try {
+    const v = JSON.parse(json) as Voo;
+    return v?.origens?.length && v?.destinos?.length && v?.datas?.length ? v : null;
+  } catch {
+    return null;
+  }
+}

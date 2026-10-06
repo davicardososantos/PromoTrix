@@ -44,6 +44,9 @@ model Regra {
   precoReferencia Float?
   /// Só avisa se o desconto for pelo menos este %.
   descontoMin    Float?
+  /// Passagem aérea: JSON com origens, destinos, datas, max_paradas e intervalo_h. Preenchido, a
+  /// regra não olha o Pelando — o coletor lê o preço do trecho no Google Flights (coletor/voos.py).
+  voo            String?
   ate            String?
   ativa          Boolean    @default(true)
   ordem          Int        @default(0)

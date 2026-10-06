@@ -5,6 +5,9 @@ em tempos e **avisa na tela** quando aparece uma promoção ativa dentro do pre�
 **painel web** (Next.js) guarda o histórico de preços, deixa editar os produtos e alvos pelo celular e
 manda **notificação push** das promoções importantes.
 
+Além das lojas, ele acompanha **preço de passagem aérea** no Google Flights: uma regra com trecho e
+datas vira um alerta igual ao das promoções, com histórico de preço do voo.
+
 ```
             PC (Windows) — coletor/                         Servidor — web/
   ┌──────────────────────────────────────────┐        ┌───────────────────────────────┐
@@ -29,7 +32,7 @@ e o painel vira um `painel.html` local.
 
 | Pasta | O que é |
 |---|---|
-| `coletor/` | Python 3.10+, só a biblioteca padrão. `promotrix.py` (coleta e regras), `alerta.py` (janela com tkinter), `instalar-tarefa.ps1` (Agendador de Tarefas) |
+| `coletor/` | Python 3.10+, só a biblioteca padrão. `promotrix.py` (coleta e regras), `voos.py` (passagem aérea no Google Flights), `alerta.py` (janela com tkinter), `instalar-tarefa.ps1` (Agendador de Tarefas) |
 | `web/` | Next.js 15 + Prisma (SQLite) + Auth.js + Web Push. Docker e deploy por GitHub Actions + SSH |
 | `.github/workflows/deploy.yml` | Deploy do `web/` numa VPS por SSH a cada push na `main` |
 
@@ -39,6 +42,7 @@ e o painel vira um `painel.html` local.
 cd coletor
 copy config.example.json config.json      # buscas e regras (modo sozinho)
 python promotrix.py --listar              # o que bate nas regras agora
+python promotrix.py --voos                # lê os trechos de passagem na hora, sem esperar o intervalo
 python promotrix.py --teste               # mostra a janela de alerta
 powershell -ExecutionPolicy Bypass -File instalar-tarefa.ps1   # 2 min após o logon e a cada 30 min
 ```
@@ -62,6 +66,7 @@ cair o coletor continua usando ela.
 
 | Campo | O que faz |
 |---|---|
+| `voo` | Passagem aérea: a regra deixa de olhar o Pelando (veja abaixo) |
 | `grupo`, `nome` | Seção do painel e nome do alerta |
 | `prioridade` | `alta`: janela grande na tela + push no celular. `normal`: só painel e uma notificação discreta |
 | `precisa` | **Todos** estes termos têm de aparecer no título ou no nome da loja |
@@ -89,6 +94,42 @@ mostra a origem no selo.
 Sem nenhuma delas, a oferta aparece sem %. A faixa **Grandes oportunidades** do painel junta o que tem
 15% ou mais de desconto, 300° ou mais no Pelando, ou o menor preço já visto (com pelo menos 3 ofertas
 no histórico de uma regra de produto único).
+
+### Passagem aérea (Google Flights)
+
+Uma regra com o bloco `voo` para de procurar no Pelando e passa a acompanhar o preço de um trecho:
+
+```json
+{
+  "grupo": "Passagens",
+  "nome": "Natal na Bahia (24 ou 25/12)",
+  "prioridade": "alta",
+  "preco_max": 900,
+  "ate": "2026-12-25",
+  "voo": {
+    "origens": ["GRU", "CGH", "VCP"],
+    "destinos": ["SSA", "VDC"],
+    "datas": ["2026-12-24", "2026-12-25"],
+    "max_paradas": 1,
+    "intervalo_h": 4
+  }
+}
+```
+
+Para cada destino em cada data, ele guarda **o voo mais barato** dentro do limite de paradas. Assim o
+histórico do painel vira a série de preços daquele dia, e o alerta dispara quando o dia fica mais
+barato — a mesma regra das promoções: avisa uma vez, e só de novo se o preço cair. `preco_max` e
+`preco_referencia` valem igual; os campos de termo e de votos não valem para passagem.
+
+A busca não é uma API: ela vai num parâmetro `tfs`, um protobuf em base64 que o `coletor/voos.py`
+monta à mão, e a página de resultados já vem pronta no HTML — não precisa de navegador nem de login.
+Como não é documentado pelo Google, pode mudar sem aviso; `python promotrix.py --voos` lê todos os
+trechos na hora e mostra o que encontrou, que é o jeito de conferir se ainda funciona.
+
+Cada trecho é uma página de alguns MB, e passagem não muda de preço de meia em meia hora: por isso o
+`intervalo_h` (4 por padrão), e por isso vários aeroportos de saída entram na **mesma** consulta.
+Entre duas leituras, o último preço continua valendo no painel. O Google também diz se o trecho está
+com preço baixo, normal ou alto, e isso aparece no cartão.
 
 ## Painel web (`web/`)
 
@@ -135,6 +176,10 @@ containers e healthcheck. Se a migration falhar, o app antigo continua servindo.
 - **Não tente rodar o coletor no servidor contornando a proteção da Cloudflare.**
 
 ## Se parar de funcionar
+
+Se o Google Flights mudar a página, as passagens somem do painel e o `promotrix.log` registra
+"nenhum voo lido" em cada trecho. `python promotrix.py --voos` mostra o mesmo na hora. O que o
+`coletor/voos.py` lê é o `aria-label` de cada `<li class="pIav2d">` e o ícone `ic_price_low/typical/high`.
 
 Se o Pelando mudar a página, o coletor avisa uma vez por dia ("parou de ler o Pelando"). Ele procura
 cada promoção pelo trecho `"id":[0,"<uuid>"],"slug":` e lê os campos no formato `"campo":[0,valor]`.

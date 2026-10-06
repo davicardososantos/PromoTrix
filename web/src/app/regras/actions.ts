@@ -22,6 +22,28 @@ const numero = (v: FormDataEntryValue | null) => {
   return t === "" ? null : Number(t);
 };
 const texto = (v: FormDataEntryValue | null) => String(v ?? "").trim() || null;
+const partes = (v: FormDataEntryValue | null) =>
+  String(v ?? "")
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+/** Trecho de passagem aérea (ver coletor/voos.py). Sem os três primeiros campos, não é regra de voo. */
+function voo(dados: FormData) {
+  const origens = partes(dados.get("vooOrigens")).map((s) => s.toUpperCase());
+  const destinos = partes(dados.get("vooDestinos")).map((s) => s.toUpperCase());
+  const datas = partes(dados.get("vooDatas"));
+  if (!origens.length || !destinos.length || !datas.length) return null;
+  const maxParadas = numero(dados.get("vooMaxParadas"));
+  const intervalo = numero(dados.get("vooIntervaloH"));
+  return JSON.stringify({
+    origens,
+    destinos,
+    datas,
+    ...(maxParadas != null ? { max_paradas: maxParadas } : {}),
+    ...(intervalo != null ? { intervalo_h: intervalo } : {}),
+  });
+}
 
 export async function salvarRegra(dados: FormData) {
   await exigirLogin();
@@ -38,6 +60,7 @@ export async function salvarRegra(dados: FormData) {
     temperaturaMin: numero(dados.get("temperaturaMin")),
     precoReferencia: numero(dados.get("precoReferencia")),
     descontoMin: numero(dados.get("descontoMin")),
+    voo: voo(dados),
     ate: texto(dados.get("ate")),
   };
   if (!campos.grupo || !campos.nome) return;

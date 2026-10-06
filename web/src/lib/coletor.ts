@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/db";
-import { lista } from "@/lib/formato";
+import { lista, voo } from "@/lib/formato";
 
 /** A API do coletor usa um segredo simples: Authorization: Bearer <COLETOR_TOKEN>. */
 export function tokenValido(req: Request): boolean {
@@ -19,20 +19,24 @@ export async function configParaColetor() {
   return {
     pausa_entre_buscas_s: 1.5,
     buscas: buscas.map((b) => ({ termo: b.termo, ...(b.ate ? { ate: b.ate } : {}) })),
-    regras: regras.map((r) => ({
-      id: r.id,
-      grupo: r.grupo,
-      nome: r.nome,
-      prioridade: r.prioridade,
-      precisa: lista(r.precisa),
-      qualquer: lista(r.qualquer),
-      nao_pode: lista(r.naoPode),
-      ...(r.precoMin != null ? { preco_min: r.precoMin } : {}),
-      ...(r.precoMax != null ? { preco_max: r.precoMax } : {}),
-      ...(r.temperaturaMin != null ? { temperatura_min: r.temperaturaMin } : {}),
-      ...(r.precoReferencia != null ? { preco_referencia: r.precoReferencia } : {}),
-      ...(r.descontoMin != null ? { desconto_min: r.descontoMin } : {}),
-      ...(r.ate ? { ate: r.ate } : {}),
-    })),
+    regras: regras.map((r) => {
+      const trecho = voo(r.voo);
+      return {
+        id: r.id,
+        grupo: r.grupo,
+        nome: r.nome,
+        prioridade: r.prioridade,
+        precisa: lista(r.precisa),
+        qualquer: lista(r.qualquer),
+        nao_pode: lista(r.naoPode),
+        ...(r.precoMin != null ? { preco_min: r.precoMin } : {}),
+        ...(r.precoMax != null ? { preco_max: r.precoMax } : {}),
+        ...(r.temperaturaMin != null ? { temperatura_min: r.temperaturaMin } : {}),
+        ...(r.precoReferencia != null ? { preco_referencia: r.precoReferencia } : {}),
+        ...(r.descontoMin != null ? { desconto_min: r.descontoMin } : {}),
+        ...(trecho ? { voo: trecho } : {}),
+        ...(r.ate ? { ate: r.ate } : {}),
+      };
+    }),
   };
 }

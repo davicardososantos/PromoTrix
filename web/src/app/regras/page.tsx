@@ -1,7 +1,7 @@
 import type { Regra } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { Topo } from "@/components/topo";
-import { lista, reais } from "@/lib/formato";
+import { lista, reais, voo } from "@/lib/formato";
 import { alternarBusca, alternarRegra, apagarBusca, apagarRegra, salvarBusca, salvarRegra } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -10,12 +10,58 @@ const dataBr = (iso: string) => iso.split("-").reverse().join("/");
 
 function resumo(r: Regra) {
   const partes = [r.precoMax != null ? `até ${reais(r.precoMax)}` : "qualquer preço"];
+  const trecho = voo(r.voo);
+  if (trecho) {
+    partes.unshift(
+      `${trecho.origens.join("+")} → ${trecho.destinos.join(", ")} em ${trecho.datas.map(dataBr).join(" ou ")}`,
+    );
+  }
   if (r.precoReferencia != null) partes.push(`normal ${reais(r.precoReferencia)}`);
   if (r.descontoMin != null) partes.push(`${r.descontoMin}%+ de desconto`);
   if (r.temperaturaMin != null) partes.push(`${r.temperaturaMin}°+ no Pelando`);
   if (r.ate) partes.push(`vale até ${dataBr(r.ate)}`);
   if (!r.ativa) partes.push("desligada");
   return partes.join(" · ");
+}
+
+/**
+ * Preenchido, a regra para de olhar o Pelando: o PC passa a ler o preço deste trecho no Google
+ * Flights e guarda o voo mais barato de cada destino em cada data. Os campos de termo e de votos
+ * acima não valem para passagem; o preço máximo e o preço normal valem.
+ */
+function FormVoo({ r }: { r?: Regra }) {
+  const v = r ? voo(r.voo) : null;
+  return (
+    <fieldset className="voo">
+      <legend>Passagem aérea (opcional)</legend>
+      <p className="resumo-alvo">
+        Com os três primeiros campos preenchidos, esta regra acompanha o preço do trecho no Google
+        Flights em vez de procurar no Pelando. Vários aeroportos de saída custam uma consulta só.
+      </p>
+      <div className="campos">
+        <label>
+          Aeroportos de saída
+          <input name="vooOrigens" defaultValue={v?.origens.join(", ") ?? ""} placeholder="GRU, CGH, VCP" />
+        </label>
+        <label>
+          Aeroportos de chegada
+          <input name="vooDestinos" defaultValue={v?.destinos.join(", ") ?? ""} placeholder="SSA, VDC" />
+        </label>
+        <label>
+          Datas de ida (AAAA-MM-DD)
+          <input name="vooDatas" defaultValue={v?.datas.join(", ") ?? ""} placeholder="2026-12-24, 2026-12-25" />
+        </label>
+        <label>
+          Máximo de paradas
+          <input name="vooMaxParadas" inputMode="numeric" defaultValue={v?.max_paradas ?? ""} placeholder="1" />
+        </label>
+        <label>
+          Reler a cada (horas)
+          <input name="vooIntervaloH" inputMode="numeric" defaultValue={v?.intervalo_h ?? ""} placeholder="4" />
+        </label>
+      </div>
+    </fieldset>
+  );
 }
 
 function FormRegra({ r }: { r?: Regra }) {
@@ -73,6 +119,7 @@ function FormRegra({ r }: { r?: Regra }) {
         Vale até
         <input name="ate" type="date" defaultValue={r?.ate ?? ""} />
       </label>
+      <FormVoo r={r} />
       <button className="btn btn-primario" type="submit">
         {r ? "Salvar" : "Criar regra"}
       </button>

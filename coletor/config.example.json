@@ -40,6 +40,20 @@
       "prioridade": "normal",
       "precisa": ["nome da loja"],
       "qualquer": ["cupom", "off", "%", "desconto"]
+    },
+    {
+      "grupo": "Passagens",
+      "nome": "Passagem: com 'voo', a regra lê o Google Flights em vez do Pelando",
+      "prioridade": "alta",
+      "preco_max": 900,
+      "ate": "2026-12-25",
+      "voo": {
+        "origens": ["GRU", "CGH", "VCP"],
+        "destinos": ["SSA", "VDC"],
+        "datas": ["2026-12-24", "2026-12-25"],
+        "max_paradas": 1,
+        "intervalo_h": 4
+      }
     }
   ]
 }
