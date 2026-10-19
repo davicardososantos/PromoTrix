@@ -47,3 +47,26 @@ export function voo(json: string | null): Voo | null {
     return null;
   }
 }
+
+/** Item em que um cupom pode servir (Cupom.servem, montado pelo coletor). `valor` é o desconto no
+ *  preço normal do item (base_tipo "preço normal") ou no alvo da regra (base_tipo "alvo"). */
+export type Servido = {
+  regra_id?: string | null;
+  regra_nome: string;
+  prioridade: string;
+  valor: number;
+  base: number;
+  base_tipo: string;
+};
+
+export function servidos(json: string): Servido[] {
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? (v as Servido[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Maior desconto que o cupom dá num item monitorado (0 se não serve em nenhum). */
+export const maiorDesconto = (json: string) => Math.max(0, ...servidos(json).map((s) => s.valor));

@@ -101,6 +101,37 @@ model Preco {
   @@index([promocaoId, em])
 }
 
+/// Cupom de loja do Pelando: um post sem produto ("R$ 300 OFF em R$ 1999"). O coletor manda todos os
+/// ativos; os que servem em algum item monitorado vêm com a lista em `servem`. O id é o do Pelando.
+model Cupom {
+  id             String    @id
+  titulo         String
+  loja           String
+  link           String
+  codigo         String?
+  /// O desconto é um % (com ou sem limite em reais) ou um valor fixo em reais.
+  porcentagem    Float?
+  valorFixo      Float?
+  /// Compra mínima e limite do desconto, lidos do título ("acima de R$ 1999", "limitado à R$ 500").
+  minimo         Float?
+  limite         Float?
+  /// "R$ 300 OFF" / "30% OFF" e "acima de R$ 1.999 · até R$ 500", prontos do coletor.
+  valorTxt       String
+  regrasTxt      String    @default("")
+  /// JSON: condições do título ([Prime], [Porto Bank], cashback...).
+  condicoes      String    @default("[]")
+  /// JSON: [{regra_id, regra_nome, prioridade, valor, base, base_tipo}] — itens em que pode servir.
+  servem         String    @default("[]")
+  temperatura    Float     @default(0)
+  postadoEm      DateTime?
+  primeiraVez    DateTime  @default(now())
+  ultimaVez      DateTime  @default(now())
+  ultimaColetaId String?
+  avisadoEm      DateTime?
+
+  @@index([ultimaColetaId])
+}
+
 model PushSubscription {
   id       String   @id @default(cuid())
   userId   String

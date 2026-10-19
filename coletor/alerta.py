@@ -1,7 +1,9 @@
-"""Janela de alerta do PromoTrix: grande, no meio da tela, sempre por cima e com som.
+"""Janela de alerta do PromoTrix: grande, no meio da tela, sempre por cima e com alarme.
 
 O promotrix.py abre esta janela num processo separado, então a tarefa agendada termina e a janela
 continua. Ela só fecha quando a pessoa clicar em Fechar.
+O alarme toca em repetição, alto o bastante para ouvir longe do PC, até clicar em "Parar alarme" ou
+Fechar, ou até passar TEMPO_ALARME_S (para não tocar a tarde toda com a casa vazia).
 Uso: pythonw alerta.py <alerta-*.json> [--teste]   (o JSON é apagado depois de lido)
 """
 import json
@@ -14,18 +16,20 @@ from pathlib import Path
 AMARELO, ESCURO, VERDE, VERDE_ESCURO = "#FFE600", "#111827", "#047857", "#065F46"
 BRANCO, CINZA, CINZA_CLARO = "#FFFFFF", "#4B5563", "#E5E7EB"
 FONTE = "Segoe UI"
+ALARME = Path(r"C:\Windows\Media\Alarm01.wav")  # o despertador do Windows
+TEMPO_ALARME_S = 180
 
 
-def mostrar(promos, painel, teste):
+def mostrar(promos, painel, teste, texto_faixa="PROMOÇÃO ENCONTRADA!"):
     root = tk.Tk()
-    root.title("PromoTrix: promoção encontrada" + (" (teste)" if teste else ""))
+    root.title("PromoTrix: " + texto_faixa.rstrip("!").lower() + (" (teste)" if teste else ""))
     root.configure(bg=BRANCO)
     root.attributes("-topmost", True)
     root.resizable(False, False)
 
     topo = tk.Frame(root, bg=AMARELO)
     topo.pack(fill="x")
-    faixa = tk.Label(topo, text=("TESTE · " if teste else "") + "PROMOÇÃO ENCONTRADA!",
+    faixa = tk.Label(topo, text=("TESTE · " if teste else "") + texto_faixa,
                      font=(FONTE, 24, "bold"), bg=AMARELO, fg=ESCURO, padx=40, pady=16)
     faixa.pack()
 
@@ -42,7 +46,7 @@ def mostrar(promos, painel, teste):
                  anchor="w", justify="left", wraplength=600).pack(fill="x")
         botoes = tk.Frame(caixa, bg=BRANCO, pady=12)
         botoes.pack(fill="x")
-        tk.Button(botoes, text="Abrir promoção", font=(FONTE, 13, "bold"), bg=VERDE, fg=BRANCO,
+        tk.Button(botoes, text=p.get("botao", "Abrir promoção"), font=(FONTE, 13, "bold"), bg=VERDE, fg=BRANCO,
                   activebackground=VERDE_ESCURO, activeforeground=BRANCO, relief="flat", padx=18, pady=8,
                   cursor="hand2", command=lambda link=p["link"]: webbrowser.open(link)).pack(side="left")
         if p.get("cupom"):
@@ -55,13 +59,26 @@ def mostrar(promos, painel, teste):
     if len(promos) > 4:
         tk.Label(root, text=f"+ {len(promos) - 4} no painel", font=(FONTE, 12), bg=BRANCO, fg=CINZA).pack()
 
+    def parar_alarme():
+        winsound.PlaySound(None, 0)
+        botao_alarme.pack_forget()
+
+    def fechar():
+        winsound.PlaySound(None, 0)
+        root.destroy()
+
     rodape = tk.Frame(root, bg=BRANCO, pady=4)
     rodape.pack(pady=(4, 20))
+    botao_alarme = tk.Button(rodape, text="Parar alarme", font=(FONTE, 12, "bold"), bg=ESCURO, fg=AMARELO,
+                             activebackground=CINZA, activeforeground=AMARELO, relief="flat", padx=18, pady=6,
+                             cursor="hand2", command=parar_alarme)
+    botao_alarme.pack(side="left", padx=6)
     if painel:
         tk.Button(rodape, text="Ver todas as promoções", font=(FONTE, 12), bg=CINZA_CLARO, relief="flat",
                   padx=18, pady=6, cursor="hand2", command=lambda: webbrowser.open(painel)).pack(side="left", padx=6)
     tk.Button(rodape, text="Fechar", font=(FONTE, 12), bg=CINZA_CLARO, relief="flat", padx=24, pady=6,
-              cursor="hand2", command=root.destroy).pack(side="left", padx=6)
+              cursor="hand2", command=fechar).pack(side="left", padx=6)
+    root.protocol("WM_DELETE_WINDOW", fechar)  # o X da janela também cala o alarme
 
     # No meio da tela (um pouco acima do centro) e na frente de tudo.
     root.update_idletasks()
@@ -70,10 +87,14 @@ def mostrar(promos, painel, teste):
     root.lift()
     root.focus_force()
 
-    def tocar(vezes=3):
-        if vezes:
-            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
-            root.after(800, tocar, vezes - 1)
+    def tocar():
+        if ALARME.exists():
+            winsound.PlaySound(str(ALARME), winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_LOOP)
+            root.after(TEMPO_ALARME_S * 1000, parar_alarme)
+        else:  # Windows sem o som de alarme: volta aos bipes de antes
+            for i in range(3):
+                root.after(i * 800, winsound.MessageBeep, winsound.MB_ICONEXCLAMATION)
+            botao_alarme.pack_forget()
 
     def piscar(vezes=10):  # a faixa amarela pisca uns segundos para chamar atenção
         if vezes:
@@ -94,4 +115,4 @@ if __name__ == "__main__":
     arquivo.unlink(missing_ok=True)
     if isinstance(dados, list):  # formato antigo: só a lista de promoções
         dados = {"promos": dados, "painel": None}
-    mostrar(dados["promos"], dados.get("painel"), "--teste" in sys.argv)
+    mostrar(dados["promos"], dados.get("painel"), "--teste" in sys.argv, dados.get("faixa", "PROMOÇÃO ENCONTRADA!"))

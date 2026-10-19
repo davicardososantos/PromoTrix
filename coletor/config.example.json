@@ -3,7 +3,11 @@
   "pausa_entre_buscas_s": 1.5,
   "buscas": [
     {"termo": "air fryer"},
-    {"termo": "lego", "ate": "2026-12-20"}
+    {"termo": "lego", "ate": "2026-12-20"},
+    {"termo": "cupom mercado livre"},
+    {"termo": "cupom shopee"},
+    {"termo": "cupom amazon"},
+    {"termo": "cupom magalu"}
   ],
   "regras": [
     {

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const ITENS = [
   { href: "/", nome: "Painel" },
+  { href: "/cupons", nome: "Cupons" },
   { href: "/regras", nome: "Regras" },
   { href: "/historico", nome: "Histórico" },
 ];

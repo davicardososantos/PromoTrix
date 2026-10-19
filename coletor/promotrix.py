@@ -8,6 +8,10 @@ confere cada promoção ATIVA com as regras e:
   - sempre: refaz o painel.html com tudo o que está valendo agora, separado por grupo.
 Cada promoção avisa uma vez. Só avisa de novo se o preço dela cair.
 
+Cupom de loja ("R$ 300 OFF em R$ 1999" no Mercado Livre) é um post sem produto. Ele não passa pelas
+regras como promoção: avisa quando serve num item monitorado (veja "cupons das lojas", mais abaixo),
+com a mesma prioridade do item. As buscas "cupom mercado livre", "cupom shopee"... trazem esses posts.
+
 Regra com um bloco "voo" não olha o Pelando: ela acompanha o preço de uma passagem aérea no Google
 Flights (voos.py) e segue pelo mesmo caminho. Como passagem não muda de preço de meia em meia hora,
 cada uma dessas regras tem o seu "intervalo_h".
@@ -23,12 +27,14 @@ Uso:
   python promotrix.py --listar                     mostra o que bate nas regras agora, sem avisar nem gravar
   python promotrix.py --painel                     refaz o painel e abre no navegador
   python promotrix.py --voos                       mostra os voos das regras de passagem, sem esperar o intervalo
+  python promotrix.py --cupons                     mostra os cupons lidos e em que itens servem, sem avisar nem gravar
   python promotrix.py --teste                      abre a janela de alerta com um exemplo
   python promotrix.py --enviar-config [--substituir]  manda o config.json local para o servidor
 """
 import base64
 import html
 import json
+import os
 import re
 import subprocess
 import sys
@@ -50,6 +56,7 @@ SERVIDOR = PASTA / "servidor.json"
 ESTADO = PASTA / "estado.json"
 LOG = PASTA / "promotrix.log"
 PAINEL = PASTA / "painel.html"
+RODANDO = PASTA / "rodando.txt"  # existe enquanto uma busca está em andamento (a bandeja.py lê)
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
 BRT = timezone(timedelta(hours=-3))
@@ -125,7 +132,7 @@ def promocoes(termo):
         # para trocar o tamanho no link. Pega a maior versão que vem pronta no srcset.
         tamanhos = re.findall(r'"url":\[0,"(https://media\.pelando\.com\.br/[^"]+)"\],"width":\[0,(\d+)\]', t)
         imagem = max(tamanhos, key=lambda u: int(u[1]))[0] if tamanhos else campo(t, "imageUrl")
-        pct = campo(t, "discountPercentage")
+        pct, fixo = campo(t, "discountPercentage"), campo(t, "discountFixed")
         achadas[id_] = {
             "id": id_,
             "titulo": titulo.strip(),
@@ -138,6 +145,10 @@ def promocoes(termo):
             "imagem": imagem,
             # Só vem preenchido em cupom ("20% OFF em LEGO"); em oferta comum o Pelando não guarda o "de/por".
             "desconto_pelando": float(pct) if pct and float(pct) > 0 else None,
+            # Post de cupom de loja, sem produto: "coupon". Nele o valor em reais é o desconto fixo
+            # ("R$ 300 OFF") ou o limite do % ("10% limitado a R$ 20"), conforme o título.
+            "tipo": campo(t, "kind"),
+            "desconto_fixo": float(fixo) if fixo and float(fixo) > 0 else None,
         }
     return achadas
 
@@ -175,6 +186,171 @@ def cupom(link):
         return m.group(1) if m else None
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------- cupons das lojas
+
+# Um cupom serve num item monitorado quando:
+#   1. o preço do item cabe na compra mínima do cupom. O preço é o normal da regra (preco_referencia)
+#      ou, sem ele, o alvo (preco_max). Regra sem nenhum dos dois fica de fora;
+#   2. a categoria escrita no cupom ("em Tecnologia", "em itens Electrolux") bate com o item. Cupom
+#      sem categoria vale para a loja toda;
+#   3. o desconto no item chega a CUPOM_MIN_PCT do preço. "R$ 40 OFF em R$ 199" num celular não conta.
+# O PromoTrix não sabe se o anúncio aceita o cupom (muitos são "itens selecionados"): quem confirma é o
+# carrinho. Por isso o aviso diz em que itens ele PODE servir, e não inventa o preço final.
+CUPOM_MIN_PCT = 10
+CUPOM_FORA = ("primeira compra", "1a compra", "novos usuarios", "novo usuario", "novos clientes", "novo cliente",
+              "resgatado", "esgotado", "encerrado", "expirado")
+CUPOM_REPETIDO_DIAS = 3  # o mesmo cupom (loja, valor, mínimo, limite) postado de novo não avisa outra vez
+# Palavras do "em ..." do título que não restringem nada.
+ESCOPO_GERAL = {
+    "loja", "lojas", "oficial", "oficiais", "item", "itens", "produto", "produtos", "selecionado", "selecionados",
+    "selecionadas", "site", "todo", "toda", "app", "aplicativo", "compra", "compras", "ate", "sem", "juros",
+    "off", "cupom", "e", "de", "do", "da", "dos", "das", "o", "a", "os", "as", "no", "na", "nos", "nas",
+    "todas", "todos", "categoria", "categorias", "reais", "magalu", "shopee", "amazon", "mercado", "livre",
+}
+_TEC = ("a57", "galaxy", "iphone", "celular", "smartphone", "watch", "notebook", "tablet")
+_CELULAR = ("a57", "galaxy", "iphone", "celular", "smartphone")
+_ELETRO = ("cooktop", "lava", "forno", "depurador", "coifa", "fryer", "ar condicionado", "geladeira")
+# Categoria escrita no cupom → termos das regras que entram nela. Uma marca escrita no cupom
+# (Electrolux) não precisa estar aqui: ela casa direto com os termos da regra.
+CATEGORIAS = {
+    "tecnologia": _TEC, "eletronicos": _TEC, "eletronico": _TEC,
+    "celular": _CELULAR, "celulares": _CELULAR, "smartphone": _CELULAR, "smartphones": _CELULAR,
+    "telefonia": _CELULAR, "samsung": ("a57", "galaxy"), "apple": ("apple watch", "iphone"),
+    "smartwatch": ("watch",), "smartwatches": ("watch",), "relogio": ("watch",), "relogios": ("watch",),
+    "wearables": ("watch",),
+    "eletrodomesticos": _ELETRO, "eletroportateis": _ELETRO, "eletro": _ELETRO, "cozinha": _ELETRO,
+    "climatizacao": ("ar condicionado",), "ventilacao": ("ar condicionado",),
+    "moda": ("renner",), "roupas": ("renner",), "vestuario": ("renner",),
+}
+_NUM = r"(\d[\d.,]*)"
+_MINIMO = re.compile(r"(?:acima de|a partir de|pedido minimo de|minimo de|minimo|compras de)\s*(?:r\$)?\s*" + _NUM
+                     + r"|\bem r\$\s*" + _NUM)
+_LIMITE = re.compile(r"(?:limitad[oa] a|limite de|limite|maximo de|maximo)\s*(?:r\$)?\s*" + _NUM
+                     + r"|\bate r\$\s*" + _NUM)
+_FIXO = re.compile(r"r\$\s*" + _NUM + r"\s*(?:de )?(?:off|de desconto)")
+
+
+def numero(txt):
+    """'1.999' → 1999, '1.999,90' → 1999.9, '500' → 500."""
+    txt = txt.strip(".,")
+    if "," in txt:
+        txt = txt.replace(".", "").replace(",", ".")
+    elif re.fullmatch(r"\d{1,3}(\.\d{3})+", txt):
+        txt = txt.replace(".", "")
+    try:
+        return float(txt)
+    except ValueError:
+        return None
+
+
+def _primeiro(regex, texto):
+    m = regex.search(texto)
+    return numero(next(g for g in m.groups() if g)) if m else None
+
+
+def ler_cupom(p):
+    """Valor, compra mínima, limite, categoria e condições de um post de cupom. None se não der para usar."""
+    t = normalizar(p["titulo"])
+    if any(x in t for x in CUPOM_FORA):
+        return None
+    pct, fixo = p.get("desconto_pelando"), p.get("desconto_fixo")
+    limite = _primeiro(_LIMITE, t)
+    if pct and "%" not in t and (fixo or _FIXO.search(t)):
+        pct = None  # "R$ 15 OFF acima de R$ 180" às vezes vem do Pelando com 15%: o título manda
+    if pct:
+        limite = limite or fixo  # junto com um %, o valor em reais do Pelando é o limite
+        fixo = None
+    else:
+        fixo = fixo or _primeiro(_FIXO, t)
+        if not fixo:
+            return None  # frete grátis, "até 70% OFF" sem número...: nada para calcular
+    minimo = 0.0 if re.search(r"sem (?:pedido )?minimo", t) else _primeiro(_MINIMO, t)
+    escopo = []
+    for m in re.finditer(r"\bem\s+(?!r\$|\d|compras)([a-z][^\[\]]*)", t):
+        trecho = re.split(r"\s(?:na|no|com|para|pelo|pela|via)\s|[,;()|]", m.group(1))[0]
+        escopo += [w for w in re.findall(r"[a-z][a-z0-9-]+", trecho) if w not in ESCOPO_GERAL]
+    condicoes = [c.strip() for c in re.findall(r"\[([^\]]+)\]", p["titulo"])]
+    if "cashback" in t:
+        condicoes.append("cashback")
+    valor_txt = f"{reais(fixo).replace(',00', '')} OFF" if fixo else f"{pct:.0f}% OFF"
+    regras_txt = " · ".join(x for x in (
+        f"acima de {reais(minimo).replace(',00', '')}" if minimo and minimo > 1 else "sem mínimo",
+        f"até {reais(limite).replace(',00', '')}" if limite else "",
+        f"só em {' '.join(escopo)}" if escopo else "",
+    ) if x)
+    # O mesmo cupom costuma ser postado várias vezes no dia, por pessoas diferentes.
+    chave = "|".join(str(x) for x in (normalizar(p["loja"]), pct, fixo, minimo, limite, " ".join(escopo)))
+    return {**p, "pct": pct, "fixo": fixo, "minimo": minimo, "limite": limite, "escopo": escopo,
+            "condicoes": condicoes, "valor_txt": valor_txt, "regras_txt": regras_txt, "chave": chave}
+
+
+def onde_serve(c, regras):
+    """Itens em que o cupom serve e o desconto que ele daria no preço normal (ou no alvo) de cada um."""
+    servidos = []
+    for r in regras:
+        if r.get("voo"):
+            continue
+        base, base_tipo = ((r["preco_referencia"], "preço normal") if r.get("preco_referencia")
+                           else (r.get("preco_max"), "alvo"))
+        if not base or base < (c["minimo"] or 0):
+            continue
+        texto = normalizar(" ".join([r["grupo"], r["nome"], *r.get("precisa", []), *r.get("qualquer", [])]))
+        if c["escopo"] and not any(
+                re.search(rf"\b{re.escape(w)}\b", texto) or any(x in texto for x in CATEGORIAS.get(w, ()))
+                for w in c["escopo"]):
+            continue
+        valor = c["fixo"] or base * c["pct"] / 100
+        if c["limite"]:
+            valor = min(valor, c["limite"])
+        if valor < base * CUPOM_MIN_PCT / 100:
+            continue
+        servidos.append({"regra": r, "valor": round(valor, 2), "base": base, "base_tipo": base_tipo})
+    return servidos
+
+
+def cupons_ativos(todas, ativas, regras):
+    """[(cupom, itens em que serve)] de todos os posts de cupom ativos: os que servem primeiro (maior
+    desconto no item), depois os mais votados. Os que não servem em nada vão só para a aba Cupons do site.
+    Post de cupom que já bateu numa regra comum (como "Renner: cupons e promoções") já avisa como
+    promoção: entra na lista, mas sem itens, para não avisar duas vezes."""
+    ja = {p["id"] for _, p in ativas}
+    achados = []
+    for p in todas.values():
+        if p.get("tipo") != "coupon" or p["status"] != "active":
+            continue
+        c = ler_cupom(p)
+        if c:
+            achados.append((c, [] if p["id"] in ja else onde_serve(c, regras)))
+    achados.sort(key=lambda x: (-max((s["valor"] for s in x[1]), default=0), -x[0]["temperatura"]))
+    vistos, unicos = set(), []
+    for c, s in achados:  # do mesmo cupom postado várias vezes, fica o post mais votado
+        if c["chave"] not in vistos:
+            vistos.add(c["chave"])
+            unicos.append((c, s))
+    return unicos
+
+
+def codigos_dos_cupons(cupons, guardados, maximo=10):
+    """O código só aparece na página do post. Cada cupom é aberto uma vez e o código fica no estado.json;
+    no máximo `maximo` páginas por rodada (os que servem vêm primeiro na lista), o resto fica para a próxima."""
+    abertos = 0
+    for c, _ in cupons:
+        if c["id"] in guardados:
+            continue
+        if abertos >= maximo:
+            break
+        if abertos:
+            time.sleep(1)  # educação com o Pelando
+        guardados[c["id"]] = {"cupom": cupom(c["link"]), "em": agora().isoformat(timespec="minutes"), "chave": c["chave"]}
+        abertos += 1
+    return {k: v.get("cupom") for k, v in guardados.items()}
+
+
+def servidos_txt(servidos, limite=3):
+    nomes = [f"{s['regra']['nome']} (-{reais(s['valor']).replace(',00', '')})" for s in servidos[:limite]]
+    return ", ".join(nomes) + (f" e mais {len(servidos) - limite}" if len(servidos) > limite else "")
 
 
 # ---------------------------------------------------------------- passagens aéreas
@@ -238,7 +414,19 @@ def obter_config():
     return ler_json(CONFIG, {}), "config.json"
 
 
-def enviar_coleta(lidas, ativas, novos_ids, cupons):
+def cupom_para_servidor(c, servidos, codigo):
+    return {
+        "id": c["id"], "titulo": c["titulo"], "loja": c["loja"], "link": c["link"], "criada": c["criada"],
+        "temperatura": c["temperatura"], "codigo": codigo, "porcentagem": c["pct"], "valor_fixo": c["fixo"],
+        "minimo": c["minimo"], "limite": c["limite"], "condicoes": c["condicoes"], "escopo": c["escopo"],
+        "valor_txt": c["valor_txt"], "regras_txt": c["regras_txt"],
+        "servem": [{"regra_id": s["regra"].get("id"), "regra_nome": s["regra"]["nome"],
+                    "prioridade": s["regra"].get("prioridade", "normal"), "valor": s["valor"],
+                    "base": s["base"], "base_tipo": s["base_tipo"]} for s in servidos],
+    }
+
+
+def enviar_coleta(lidas, ativas, novos_ids, cupons, lista_cupons=(), codigos=None, cupons_novos=()):
     if not servidor():
         return
     dentro = []
@@ -251,8 +439,13 @@ def enviar_coleta(lidas, ativas, novos_ids, cupons):
             "imagem": p.get("imagem"), "desconto": pct, "desconto_origem": origem,
         })
     try:
-        resposta = api("POST", "/api/coletor/coleta", {"lidas": lidas, "dentro": dentro, "novos": novos_ids})
-        log(f"servidor: coleta enviada ({len(dentro)} dentro, {len(novos_ids)} novas, {resposta.get('pushes', 0)} push)")
+        resposta = api("POST", "/api/coletor/coleta", {
+            "lidas": lidas, "dentro": dentro, "novos": novos_ids,
+            "cupons": [cupom_para_servidor(c, s, (codigos or {}).get(c["id"])) for c, s in lista_cupons],
+            "cupons_novos": list(cupons_novos),
+        })
+        log(f"servidor: coleta enviada ({len(dentro)} dentro, {len(novos_ids)} novas, {len(lista_cupons)} cupons, "
+            f"{resposta.get('pushes', 0)} push)")
     except Exception as e:
         log(f"servidor fora ao enviar a coleta: {e}")
 
@@ -324,7 +517,9 @@ def notificar(titulo, linhas, link, som=True):
 def abrir_alerta(itens, teste=False):
     """Abre a janela grande (alerta.py) num processo separado, que fica aberto depois que a tarefa termina."""
     arquivo = PASTA / f"alerta-{datetime.now():%Y%m%d%H%M%S%f}.json"
-    arquivo.write_text(json.dumps({"promos": itens, "painel": PAINEL.as_uri()}, ensure_ascii=False), encoding="utf-8")
+    faixa = "CUPOM ENCONTRADO!" if all(i.get("eh_cupom") for i in itens) else "PROMOÇÃO ENCONTRADA!"
+    arquivo.write_text(json.dumps({"promos": itens, "painel": PAINEL.as_uri(), "faixa": faixa},
+                                  ensure_ascii=False), encoding="utf-8")
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     cmd = [str(pythonw if pythonw.exists() else sys.executable), str(PASTA / "alerta.py"), str(arquivo)]
     if teste:
@@ -356,10 +551,42 @@ section{margin:22px 0}h2{font-size:20px;margin:0 0 8px}
 .off{position:absolute;top:8px;left:8px;background:var(--preco);color:#fff;font-weight:700;font-size:13px;padding:2px 8px;border-radius:999px}
 a.botao{margin-top:auto;align-self:flex-start;background:var(--preco);color:#fff;text-decoration:none;padding:6px 12px;border-radius:6px;font-weight:600}
 .vazio{color:var(--suave);font-style:italic}
+.outros{margin:0;padding-left:18px;color:var(--suave);font-size:14px}.outros a{color:var(--texto)}
 """
 
 
-def gerar_painel(config, ativas, avisados, regras):
+def painel_cupons(cupons, codigos):
+    """Seção do topo do painel: cupons que servem nos itens (cartões) e os outros mais votados (lista)."""
+    esc = html.escape
+    servem = [(c, s) for c, s in cupons if s]
+    outros = sorted([c for c, s in cupons if not s], key=lambda c: -c["temperatura"])[:12]
+    if not servem and not outros:
+        return ""
+    cartoes = []
+    for c, s in servem:
+        cod = codigos.get(c["id"])
+        cartoes.append(
+            '<div class="cartao">'
+            f'<span class="preco">{esc(c["valor_txt"])}</span>'
+            f'<span class="titulo">{esc(c["titulo"])}</span>'
+            f'<span class="meta">{esc(c["loja"])} · {esc(c["regras_txt"])}'
+            + (f' · {esc(", ".join(c["condicoes"]))}' if c["condicoes"] else "") + "</span>"
+            + f'<span class="meta">Pode servir em: {esc(servidos_txt(s, 6))}</span>'
+            + (f'<span class="meta">Cupom <span class="cupom">{esc(cod)}</span></span>' if cod else "")
+            + f'<a class="botao" href="{esc(c["link"])}" target="_blank">Ver no Pelando</a></div>')
+    corpo = ('<div class="grade">' + "".join(cartoes) + "</div>" if cartoes
+             else '<p class="vazio">Nenhum cupom ativo serve nos seus itens agora.</p>')
+    if outros:
+        corpo += ('<p class="regras">Outros cupons ativos, os mais votados:</p><ul class="outros">'
+                  + "".join(f'<li><a href="{esc(c["link"])}" target="_blank">{esc(c["valor_txt"])}</a> · '
+                            f'{esc(c["loja"])} · {esc(c["regras_txt"])}' + (f' · <span class="cupom">{esc(codigos[c["id"]])}</span>'
+                            if codigos.get(c["id"]) else "") + "</li>" for c in outros) + "</ul>")
+    return ('<section><h2>Cupons que servem nos seus itens</h2><p class="regras">O desconto é calculado no '
+            'preço normal do item (ou no alvo). Confira no carrinho: muitos cupons valem só para itens '
+            f'selecionados.</p>{corpo}</section>')
+
+
+def gerar_painel(config, ativas, avisados, regras, cupons=(), codigos=None):
     esc = html.escape
     momento = agora()
     grupos = []
@@ -407,7 +634,7 @@ def gerar_painel(config, ativas, avisados, regras):
         '<meta name="viewport" content="width=device-width,initial-scale=1"><title>PromoTrix</title>'
         f"<style>{CSS}</style></head><body><header><h1>PromoTrix</h1>"
         f"<p>Promoções ativas no Pelando dentro dos seus alvos · atualizado em {momento:%d/%m/%Y %H:%M}</p></header>"
-        f'<main>{"".join(partes)}</main></body></html>', encoding="utf-8")
+        f'<main>{painel_cupons(cupons, codigos or {})}{"".join(partes)}</main></body></html>', encoding="utf-8")
 
 
 # ---------------------------------------------------------------- principal
@@ -489,6 +716,17 @@ def main():
     # Passagem entra no painel mesmo cara, para o site acompanhar o preço subir e descer. O alvo da
     # regra decide só o aviso, mais abaixo.
     ativas += passagens(regras_voo, estado)
+    lista_cupons = cupons_ativos(todas, ativas, regras_pelando)
+
+    if "--cupons" in args:
+        for c, s in lista_cupons:
+            print(f"{c['valor_txt']:>12}  {c['loja'][:14]:14} {c['temperatura']:5.0f}°  {c['regras_txt'][:44]:44} "
+                  f"{c['titulo'][:70]}")
+            if s:
+                print(f"{'':14}serve em: {servidos_txt(s, 10)}")
+        print(f"{len(lista_cupons)} cupons ativos, {sum(1 for _, s in lista_cupons if s)} servem nos itens "
+              f"(regras: {origem})")
+        return
 
     if "--listar" in args:
         for r, p in sorted(ativas, key=lambda x: (x[0]["grupo"], x[1]["preco"] or 0)):
@@ -518,32 +756,68 @@ def main():
         log(f"AVISO [{r.get('prioridade', 'normal')}] {r['nome']} {reais(p['preco'])} {p['loja']} "
             f"{p['titulo'][:70]} cupom={cod} {p['link']}")
 
-    gerar_painel(config, ativas, avisados, regras)
+    # Cupom que serve num item avisa uma vez, com a prioridade mais alta entre os itens, e não avisa de
+    # novo se o mesmo cupom for repostado. Na primeira rodada com cupons (estado.json sem "cupons"), o
+    # que já está ativo só é guardado, sem aviso, para não tocar alarme por cupom de dias atrás.
+    primeira_vez = "cupons" not in estado
+    guardados = estado.setdefault("cupons", {})
+    codigos = codigos_dos_cupons(lista_cupons, guardados)
+    cupons_novos = []
+    for c, s in lista_cupons:
+        g = guardados.get(c["id"])
+        if not s or not g or g.get("avisado"):
+            continue
+        g["avisado"] = True
+        repetido = any(o is not g and o.get("avisado") and o.get("chave") == c["chave"]
+                       and agora() - datetime.fromisoformat(o["em"]) < timedelta(days=CUPOM_REPETIDO_DIAS)
+                       for o in guardados.values())
+        if primeira_vez or repetido:
+            continue
+        importante = any(x["regra"].get("prioridade") == "alta" for x in s)
+        item = {"regra": "Cupom que pode servir em: " + servidos_txt(s), "preco_txt": c["valor_txt"],
+                "loja": c["loja"], "titulo": c["titulo"], "cupom": g.get("cupom"), "link": c["link"],
+                "desconto_txt": " · ".join([c["regras_txt"], *c["condicoes"], "confira no carrinho se o item aceita"]),
+                "temperatura": c["temperatura"], "eh_cupom": True, "botao": "Abrir cupom"}
+        (alta if importante else normal).append(item)
+        cupons_novos.append(c["id"])
+        log(f"AVISO CUPOM [{'alta' if importante else 'normal'}] {c['valor_txt']} {c['loja']} {c['regras_txt']} "
+            f"serve em {servidos_txt(s, 10)} cupom={g.get('cupom')} {c['link']}")
+
+    gerar_painel(config, ativas, avisados, regras, lista_cupons, codigos)
     if alta:
         abrir_alerta(alta)
     if alta or normal:
-        resumo = f"{len(alta) + len(normal)} promoção(ões) nova(s)" + (f", {len(alta)} importante(s)" if alta else "")
+        n_cupons = sum(1 for i in alta + normal if i.get("eh_cupom"))
+        n_promos = len(alta) + len(normal) - n_cupons
+        resumo = " e ".join(x for x in (f"{n_promos} promoção(ões) nova(s)" if n_promos else "",
+                                        f"{n_cupons} cupom(ns) novo(s)" if n_cupons else "") if x)
+        resumo += f", {len(alta)} importante(s)" if alta else ""
         notificar("PromoTrix: " + resumo,
                   [f"{i['regra']}: {i['preco_txt']}" for i in (alta + normal)[:2]] + ["Clique para abrir o painel"],
                   PAINEL.as_uri(), som=False)
 
     limite = agora() - timedelta(days=DIAS_GUARDANDO_AVISOS)
-    for k in [k for k, v in avisados.items() if datetime.fromisoformat(v["em"]) < limite]:
-        del avisados[k]
+    for guardado in (avisados, guardados):
+        for k in [k for k, v in guardado.items() if datetime.fromisoformat(v["em"]) < limite]:
+            del guardado[k]
     estado["ultima_execucao"] = agora().isoformat(timespec="minutes")
     ESTADO.write_text(json.dumps(estado, ensure_ascii=False, indent=1), encoding="utf-8")
-    log(f"ok: {len(todas)} promoções lidas, {len(ativas)} dentro das regras, {len(alta)} alta + {len(normal)} normal"
-        f" (regras: {origem})")
-    enviar_coleta(len(todas), ativas, novos_ids, {k: v.get("cupom") for k, v in avisados.items() if v.get("cupom")})
+    log(f"ok: {len(todas)} promoções lidas, {len(ativas)} dentro das regras, {len(alta)} alta + {len(normal)} normal,"
+        f" {len(lista_cupons)} cupons ({sum(1 for _, s in lista_cupons if s)} servem) (regras: {origem})")
+    enviar_coleta(len(todas), ativas, novos_ids, {k: v.get("cupom") for k, v in avisados.items() if v.get("cupom")},
+                  lista_cupons, codigos, cupons_novos)
 
     if "--painel" in args:
         webbrowser.open(PAINEL.as_uri())
 
 
 if __name__ == "__main__":
+    RODANDO.write_text(str(os.getpid()), encoding="utf-8")
     try:
         main()
     except Exception:  # pythonw não tem console: sem isto, o erro some calado
         import traceback
         log("ERRO " + " | ".join(traceback.format_exc().splitlines()))
         raise
+    finally:
+        RODANDO.unlink(missing_ok=True)

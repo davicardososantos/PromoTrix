@@ -6,12 +6,13 @@ em tempos e **avisa na tela** quando aparece uma promoção ativa dentro do pre�
 manda **notificação push** das promoções importantes.
 
 Além das lojas, ele acompanha **preço de passagem aérea** no Google Flights: uma regra com trecho e
-datas vira um alerta igual ao das promoções, com histórico de preço do voo.
+datas vira um alerta igual ao das promoções, com histórico de preço do voo. E lê os **cupons de loja**
+(Mercado Livre, Shopee, Amazon, Magalu): avisa quando um cupom pode servir num item que você monitora.
 
 ```
             PC (Windows) — coletor/                         Servidor — web/
   ┌──────────────────────────────────────────┐        ┌───────────────────────────────┐
-  │ a cada 30 min (Agendador de Tarefas)     │  GET   │ /api/coletor/config            │
+  │ a cada 15 min (Agendador de Tarefas)     │  GET   │ /api/coletor/config            │
   │ 1. busca as regras ──────────────────────┼───────▶│   buscas e regras (SQLite)     │
   │ 2. lê o Pelando (internet de casa)       │        │                               │
   │ 3. confere as regras                     │  POST  │ /api/coletor/coleta            │
@@ -32,7 +33,7 @@ e o painel vira um `painel.html` local.
 
 | Pasta | O que é |
 |---|---|
-| `coletor/` | Python 3.10+, só a biblioteca padrão. `promotrix.py` (coleta e regras), `voos.py` (passagem aérea no Google Flights), `alerta.py` (janela com tkinter), `instalar-tarefa.ps1` (Agendador de Tarefas) |
+| `coletor/` | Python 3.10+, só a biblioteca padrão. `promotrix.py` (coleta e regras), `voos.py` (passagem aérea no Google Flights), `alerta.py` (janela com tkinter), `instalar-tarefa.ps1` (Agendador de Tarefas), `bandeja.py` (ícone perto do relógio, opcional, precisa do `pystray`) |
 | `web/` | Next.js 15 + Prisma (SQLite) + Auth.js + Web Push. Docker e deploy por GitHub Actions + SSH |
 | `.github/workflows/deploy.yml` | Deploy do `web/` numa VPS por SSH a cada push na `main` |
 
@@ -43,9 +44,27 @@ cd coletor
 copy config.example.json config.json      # buscas e regras (modo sozinho)
 python promotrix.py --listar              # o que bate nas regras agora
 python promotrix.py --voos                # lê os trechos de passagem na hora, sem esperar o intervalo
+python promotrix.py --cupons              # cupons de loja ativos e em que itens servem
 python promotrix.py --teste               # mostra a janela de alerta
-powershell -ExecutionPolicy Bypass -File instalar-tarefa.ps1   # 2 min após o logon e a cada 30 min
+powershell -ExecutionPolicy Bypass -File instalar-tarefa.ps1   # 2 min após o logon e a cada 15 min
 ```
+
+### Ícone na bandeja (opcional)
+
+A tarefa roda escondida. Para ver de relance se o PromoTrix está vivo, o `bandeja.py` põe um ícone
+amarelo com "P" perto do relógio. A bolinha mostra o estado: **verde** (a última busca deu certo),
+**azul** (buscando agora), **laranja** (funcionou, mas com aviso), **vermelha** (erro, ou nenhuma busca
+terminou na última hora e pouco) e **cinza** (pausado). Passar o mouse mostra a última busca e a próxima.
+O clique abre o painel e o botão direito tem "Buscar agora", "Ver log", "Pausar buscas" e "Iniciar com o Windows".
+
+```powershell
+pip install pystray
+python bandeja.py --instalar     # abre junto com o Windows (pasta Inicializar) e já abre agora
+python bandeja.py --remover      # tira da inicialização
+```
+
+No Windows 11 o ícone novo fica escondido na setinha `^`. Para deixá-lo sempre à vista, arraste-o
+para a barra, ou ligue em Configurações > Personalização > Barra de tarefas > Outros ícones da bandeja.
 
 Para ligar ao painel web, copie `servidor.example.json` para `servidor.json`, com a URL e o
 `COLETOR_TOKEN` do servidor. Depois mande as suas regras uma vez:
@@ -94,6 +113,30 @@ mostra a origem no selo.
 Sem nenhuma delas, a oferta aparece sem %. A faixa **Grandes oportunidades** do painel junta o que tem
 15% ou mais de desconto, 300° ou mais no Pelando, ou o menor preço já visto (com pelo menos 3 ofertas
 no histórico de uma regra de produto único).
+
+### Cupons de loja
+
+Cupom de loja ("R$ 300 OFF em R$ 1999" no Mercado Livre) é um post do Pelando **sem produto**. Ele
+chega pelas buscas `cupom mercado livre`, `cupom shopee`, `cupom amazon` e `cupom magalu` (outra loja:
+é só criar a busca `cupom <loja>`) e não passa pelas regras como promoção. O coletor lê o valor (% ou
+reais), a compra mínima e o limite do desconto, e confere cada regra:
+
+1. o preço do item cabe na compra mínima. O preço é o `preco_referencia` ou, sem ele, o `preco_max`;
+   regra sem nenhum dos dois fica de fora;
+2. a categoria escrita no cupom ("em Tecnologia", "em itens Electrolux") bate com o item. A marca casa
+   direto com os termos da regra; as categorias ficam em `CATEGORIAS`, no `promotrix.py`. Cupom sem
+   categoria vale para a loja toda; categoria desconhecida ("em Ferramentas") não serve;
+3. o desconto no item chega a 10% do preço (`CUPOM_MIN_PCT`): "R$ 40 OFF em R$ 199" não conta num celular.
+
+O cupom que serve avisa **uma vez**, com a prioridade mais alta entre os itens (alta = janela com alarme
+e push no celular). O mesmo cupom repostado por outra pessoa não avisa de novo por 3 dias. Ficam de
+fora os de primeira compra, os de frete grátis (sem valor para calcular) e os marcados como resgatados.
+O código do cupom só aparece na página do post: cada um é aberto **uma vez** (no máximo 10 por rodada)
+e o código fica no `estado.json`.
+
+O PromoTrix **não sabe se o anúncio aceita o cupom** (muitos valem só para "itens selecionados"): o
+aviso diz em que itens ele **pode** servir e quanto daria no preço normal, sem inventar preço final.
+Quem confirma é o carrinho. Todos os cupons ativos, sirvam ou não, vão para a aba **Cupons** do site.
 
 ### Passagem aérea (Google Flights)
 
@@ -148,9 +191,10 @@ npm run admin                 # cria o primeiro usuário
 npm run dev                   # http://localhost:3000
 ```
 
-Telas: **Painel** (grandes oportunidades no topo e, abaixo, o que a última coleta achou, por grupo,
-com foto, % de desconto e votos), **Regras** (editar produtos, alvos e
-buscas), **Histórico** (tudo o que já bateu em cada regra e o menor preço visto).
+Telas: **Painel** (grandes oportunidades e os cupons que servem nos seus itens no topo e, abaixo, o
+que a última coleta achou, por grupo, com foto, % de desconto e votos), **Cupons** (todos os cupons de
+loja ativos, por loja: primeiro os que servem nos itens, depois os mais votados), **Regras** (editar
+produtos, alvos e buscas), **Histórico** (tudo o que já bateu em cada regra e o menor preço visto).
 
 Oferta que já mudou de preço ganha, nas duas telas, a **curva do preço** com quanto subiu ou desceu
 desde a primeira leitura e o menor valor visto. É o que deixa acompanhar uma passagem pelo site. Os
@@ -179,7 +223,7 @@ containers e healthcheck. Se a migration falhar, o app antigo continua servindo.
 
 - O coletor só funciona com o **PC ligado e o usuário logado**. Promoção que aparece e acaba com o PC
   desligado é perdida. O painel avisa quando a última coleta passou de 2 horas.
-- Ele lê uma página pública: mantenha 30 minutos ou mais de intervalo, poucas buscas e a pausa entre
+- Ele lê uma página pública: mantenha 15 minutos ou mais de intervalo, poucas buscas e a pausa entre
   elas (`pausa_entre_buscas_s`). É uma ferramenta de uso pessoal.
 - **Não tente rodar o coletor no servidor contornando a proteção da Cloudflare.**
 

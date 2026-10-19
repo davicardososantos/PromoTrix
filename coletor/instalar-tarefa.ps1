@@ -1,15 +1,15 @@
 # Registra (ou remove) a tarefa "PromoTrix" no Agendador de Tarefas do Windows.
-# A tarefa checa 2 min depois do logon e depois a cada N minutos (padrao 30), so com o usuario logado,
+# A tarefa checa 2 min depois do logon e depois a cada N minutos (padrao 15), so com o usuario logado,
 # porque a janela de alerta precisa da sessao dele.
 #
 # Uso (na pasta do projeto):
 #   powershell -ExecutionPolicy Bypass -File instalar-tarefa.ps1              instala ou atualiza
-#   powershell -ExecutionPolicy Bypass -File instalar-tarefa.ps1 -Minutos 60  outro intervalo
+#   powershell -ExecutionPolicy Bypass -File instalar-tarefa.ps1 -Minutos 30  outro intervalo
 #   powershell -ExecutionPolicy Bypass -File instalar-tarefa.ps1 -Remover     remove a tarefa
 #
 # Arquivo sem acento de proposito: o PowerShell 5.1 le .ps1 sem BOM como ANSI.
 
-param([int]$Minutos = 30, [switch]$Remover, [string]$Nome = 'PromoTrix')
+param([int]$Minutos = 15, [switch]$Remover, [string]$Nome = 'PromoTrix')
 
 if ($Remover) {
     Unregister-ScheduledTask -TaskName $Nome -Confirm:$false

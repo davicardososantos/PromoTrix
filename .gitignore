@@ -5,6 +5,8 @@ coletor/servidor.json
 coletor/estado.json
 coletor/painel.html
 coletor/alerta-*.json
+coletor/rodando.txt
+coletor/avisos-de-hoje.txt
 *.log
 __pycache__/
 

@@ -3,8 +3,9 @@ import { prisma } from "@/lib/db";
 import { Topo } from "@/components/topo";
 import { AtivarPush } from "@/components/ativar-push";
 import { CartaoPromo, type PromoComRegra } from "@/components/cartao-promo";
-import { Alerta } from "@/components/icones";
-import { haQuanto, quando, reais } from "@/lib/formato";
+import { CartaoCupom } from "@/components/cartao-cupom";
+import { Alerta, Seta } from "@/components/icones";
+import { haQuanto, maiorDesconto, quando, reais } from "@/lib/formato";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ const PC_PARADO = 2 * 60 * 60 * 1000;
 // "Menor preço já visto" só vale com algum histórico e em regra de um produto só (a que tem preço normal):
 // numa regra como "LEGO até R$ 100", o mais barato é só o LEGO mais barato, não uma baixa de preço.
 const MINIMO_HISTORICO = 3;
+const CUPONS_NO_PAINEL = 3; // o resto fica na aba Cupons
 
 /** Pontua uma oferta para a faixa "Grandes oportunidades": desconto, votos e menor preço já visto. */
 function pontos(p: PromoComRegra, menor: boolean) {
@@ -51,6 +53,12 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
     .filter((p) => (p.desconto ?? 0) >= 15 || p.temperatura >= 300 || ehMenor(p))
     .sort((a, b) => pontos(b, ehMenor(b)) - pontos(a, ehMenor(a)))
     .slice(0, 6);
+
+  const cupons = ultima
+    ? (await prisma.cupom.findMany({ where: { ultimaColetaId: ultima.id } }))
+        .filter((c) => maiorDesconto(c.servem) > 0)
+        .sort((a, b) => maiorDesconto(b.servem) - maiorDesconto(a.servem))
+    : [];
 
   const grupos = [...new Set(regras.map((r) => r.grupo))];
   const contar = (g: string) => promos.filter((p) => p.regra?.grupo === g).length;
@@ -101,6 +109,27 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
           </section>
         )}
 
+        {cupons.length > 0 && !filtro && (
+          <section className="secao">
+            <div className="secao-cabeca">
+              <h2>Cupons para os seus itens</h2>
+              <span className="contagem">{cupons.length}</span>
+              <Link href="/cupons" className="ver-todos">
+                Ver todos os cupons <Seta tamanho={14} />
+              </Link>
+            </div>
+            <div className="grade grade-cupons">
+              {cupons.slice(0, CUPONS_NO_PAINEL).map((c) => (
+                <CartaoCupom
+                  key={c.id}
+                  c={c}
+                  novo={!!c.avisadoEm && Date.now() - c.avisadoEm.getTime() < UM_DIA}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
         <nav className="filtros" aria-label="Filtrar por grupo">
           <Link href="/" className={`filtro${!filtro ? " ativo" : ""}`}>
             Todos<span className="n">{promos.length}</span>
@@ -137,7 +166,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
                   ))}
                 </div>
               ) : (
-                <p className="vazio">Nada dentro do alvo agora. O PC confere de novo a cada 30 minutos.</p>
+                <p className="vazio">Nada dentro do alvo agora. O PC confere de novo a cada 15 minutos.</p>
               )}
             </section>
           );
