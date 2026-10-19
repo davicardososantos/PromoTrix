@@ -29,6 +29,7 @@ Uso:
   python promotrix.py --voos                       mostra os voos das regras de passagem, sem esperar o intervalo
   python promotrix.py --cupons                     mostra os cupons lidos e em que itens servem, sem avisar nem gravar
   python promotrix.py --teste                      abre a janela de alerta com um exemplo
+  python promotrix.py --teste-cupom                abre o aviso discreto de cupom com um exemplo
   python promotrix.py --enviar-config [--substituir]  manda o config.json local para o servidor
 """
 import base64
@@ -333,17 +334,17 @@ def cupons_ativos(todas, ativas, regras):
 
 
 def codigos_dos_cupons(cupons, guardados, maximo=10):
-    """O código só aparece na página do post. Cada cupom é aberto uma vez e o código fica no estado.json;
-    no máximo `maximo` páginas por rodada (os que servem vêm primeiro na lista), o resto fica para a próxima."""
+    """Guarda no estado.json cada cupom visto (para o aviso sair uma vez só) e o código dele. O código só
+    aparece na página do post: cada cupom é aberto uma vez, no máximo `maximo` páginas por rodada (os que
+    servem vêm primeiro na lista); o resto fica para a próxima."""
     abertos = 0
     for c, _ in cupons:
-        if c["id"] in guardados:
+        g = guardados.setdefault(c["id"], {"em": agora().isoformat(timespec="minutes"), "chave": c["chave"]})
+        if "cupom" in g or abertos >= maximo:
             continue
-        if abertos >= maximo:
-            break
         if abertos:
             time.sleep(1)  # educação com o Pelando
-        guardados[c["id"]] = {"cupom": cupom(c["link"]), "em": agora().isoformat(timespec="minutes"), "chave": c["chave"]}
+        g["cupom"] = cupom(c["link"])
         abertos += 1
     return {k: v.get("cupom") for k, v in guardados.items()}
 
@@ -514,11 +515,11 @@ def notificar(titulo, linhas, link, som=True):
                    creationflags=SEM_JANELA, timeout=30, check=False)
 
 
-def abrir_alerta(itens, teste=False):
-    """Abre a janela grande (alerta.py) num processo separado, que fica aberto depois que a tarefa termina."""
+def abrir_alerta(itens, teste=False, modo="promo"):
+    """Abre o aviso (alerta.py) num processo separado, que fica aberto depois que a tarefa termina.
+    modo "promo": a janela grande com alarme. modo "cupom": o cartão discreto no canto da tela."""
     arquivo = PASTA / f"alerta-{datetime.now():%Y%m%d%H%M%S%f}.json"
-    faixa = "CUPOM ENCONTRADO!" if all(i.get("eh_cupom") for i in itens) else "PROMOÇÃO ENCONTRADA!"
-    arquivo.write_text(json.dumps({"promos": itens, "painel": PAINEL.as_uri(), "faixa": faixa},
+    arquivo.write_text(json.dumps({"promos": itens, "painel": PAINEL.as_uri(), "modo": modo},
                                   ensure_ascii=False), encoding="utf-8")
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     cmd = [str(pythonw if pythonw.exists() else sys.executable), str(PASTA / "alerta.py"), str(arquivo)]
@@ -646,6 +647,13 @@ def main():
                        "titulo": "Celular Samsung Galaxy A57 5G 256GB, 8GB RAM (exemplo)",
                        "cupom": "EXEMPLO10", "link": "https://www.pelando.com.br/"}], teste=True)
         return
+    if "--teste-cupom" in args:
+        abrir_alerta([{"regra": "Pode servir em: Galaxy A57 256GB (-R$ 300)", "preco_txt": "R$ 300 OFF",
+                       "loja": "Mercado Livre", "titulo": "Cupom Mercado Livre oferece R$ 300 OFF em R$ 1999 (exemplo)",
+                       "cupom": "EXEMPLO300", "link": "https://www.pelando.com.br/", "eh_cupom": True,
+                       "desconto_txt": "acima de R$ 1.999 · confira no carrinho se o item aceita"}],
+                     teste=True, modo="cupom")
+        return
     if "--voos" in args:  # inspeção: lê todos os trechos agora, sem o intervalo e sem gravar nada
         config, _ = obter_config()
         hoje = agora().strftime("%Y-%m-%d")
@@ -764,8 +772,8 @@ def main():
     codigos = codigos_dos_cupons(lista_cupons, guardados)
     cupons_novos = []
     for c, s in lista_cupons:
-        g = guardados.get(c["id"])
-        if not s or not g or g.get("avisado"):
+        g = guardados[c["id"]]
+        if not s or g.get("avisado"):
             continue
         g["avisado"] = True
         repetido = any(o is not g and o.get("avisado") and o.get("chave") == c["chave"]
@@ -774,7 +782,7 @@ def main():
         if primeira_vez or repetido:
             continue
         importante = any(x["regra"].get("prioridade") == "alta" for x in s)
-        item = {"regra": "Cupom que pode servir em: " + servidos_txt(s), "preco_txt": c["valor_txt"],
+        item = {"regra": "Pode servir em: " + servidos_txt(s), "preco_txt": c["valor_txt"],
                 "loja": c["loja"], "titulo": c["titulo"], "cupom": g.get("cupom"), "link": c["link"],
                 "desconto_txt": " · ".join([c["regras_txt"], *c["condicoes"], "confira no carrinho se o item aceita"]),
                 "temperatura": c["temperatura"], "eh_cupom": True, "botao": "Abrir cupom"}
@@ -784,8 +792,12 @@ def main():
             f"serve em {servidos_txt(s, 10)} cupom={g.get('cupom')} {c['link']}")
 
     gerar_painel(config, ativas, avisados, regras, lista_cupons, codigos)
-    if alta:
-        abrir_alerta(alta)
+    # Promoção importante: janela grande com alarme. Cupom importante: cartão discreto no canto, para
+    # não se confundir com produto.
+    if [i for i in alta if not i.get("eh_cupom")]:
+        abrir_alerta([i for i in alta if not i.get("eh_cupom")])
+    if [i for i in alta if i.get("eh_cupom")]:
+        abrir_alerta([i for i in alta if i.get("eh_cupom")], modo="cupom")
     if alta or normal:
         n_cupons = sum(1 for i in alta + normal if i.get("eh_cupom"))
         n_promos = len(alta) + len(normal) - n_cupons

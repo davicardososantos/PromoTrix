@@ -16,7 +16,8 @@ function configurar(): boolean {
   return true;
 }
 
-export type Aviso = { title: string; body: string; url?: string; tag?: string };
+/** `silencioso`: chega no celular sem som nem vibração (cupom; promoção de produto toca). */
+export type Aviso = { title: string; body: string; url?: string; tag?: string; silencioso?: boolean };
 
 /** Manda para todos os aparelhos inscritos (ou só os de um usuário). Remove inscrição expirada. */
 export async function avisarCelulares(aviso: Aviso, userId?: string): Promise<number> {

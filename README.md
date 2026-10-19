@@ -128,8 +128,11 @@ reais), a compra mínima e o limite do desconto, e confere cada regra:
    categoria vale para a loja toda; categoria desconhecida ("em Ferramentas") não serve;
 3. o desconto no item chega a 10% do preço (`CUPOM_MIN_PCT`): "R$ 40 OFF em R$ 199" não conta num celular.
 
-O cupom que serve avisa **uma vez**, com a prioridade mais alta entre os itens (alta = janela com alarme
-e push no celular). O mesmo cupom repostado por outra pessoa não avisa de novo por 3 dias. Ficam de
+O cupom que serve avisa **uma vez**, com a prioridade mais alta entre os itens. O aviso é mais
+discreto que o de promoção, para não confundir cupom com produto: na prioridade alta, um cartão escuro
+no canto da tela com um som curto (sem alarme, sem piscar, sem tomar o foco) e push **silencioso** no
+celular; na normal, só a notificação do Windows. `python promotrix.py --teste-cupom` mostra o cartão.
+O mesmo cupom repostado por outra pessoa não avisa de novo por 3 dias. Ficam de
 fora os de primeira compra, os de frete grátis (sem valor para calcular) e os marcados como resgatados.
 O código do cupom só aparece na página do post: cada um é aberto **uma vez** (no máximo 10 por rodada)
 e o código fica no `estado.json`.

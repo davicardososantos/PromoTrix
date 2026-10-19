@@ -157,6 +157,7 @@ export async function POST(req: Request) {
           ` · ${c.regras_txt}${c.codigo ? ` · cupom ${c.codigo}` : ""}`,
         url: c.link,
         tag: `promotrix-cupom-${c.id}`,
+        silencioso: true,
       });
     }
   }

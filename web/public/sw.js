@@ -66,6 +66,8 @@ self.addEventListener("push", (event) => {
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
       tag: dados.tag,
+      // Cupom chega sem som nem vibração: fica na bandeja, sem disputar atenção com promoção de produto.
+      silent: dados.silencioso === true,
       data: { url: dados.url || "/" },
     }),
   );
