@@ -164,7 +164,7 @@ def desconto(p, regra):
     O Pelando não guarda o preço antigo das ofertas, e as lojas bloqueiam leitura automática."""
     opcoes = []
     if p.get("desconto_pelando"):
-        opcoes.append((p["desconto_pelando"], "informado no " + ("Promobit" if p.get("fonte") == "promobit" else "Pelando")))
+        opcoes.append((p["desconto_pelando"], "informado no " + fonte_txt(p)))
     m = re.search(r"(\d{1,2})\s?%\s?(?:off|de desconto)", normalizar(p["titulo"]))
     if m:
         opcoes.append((float(m.group(1)), "escrito na oferta"))
@@ -282,9 +282,67 @@ def promobit(termo):
     return achadas
 
 
+# ---------------------------------------------------------------- Boletando
+
+# O Boletando (boletando.com) é um site de ofertas em WordPress. A busca (/?s=termo) já vem pronta no
+# HTML, em cartões com preço, loja, cupom, data e a marca "expired" quando a oferta acaba (eles marcam
+# rápido). Cartão sem preço que começa com "Cupom" é cupom de loja, com mínimo e limite no título
+# ("Cupom Mercado Livre 10% OFF em Selecionados, Compra mínima R$149, Limite de desconto R$200").
+BOLETANDO = "https://boletando.com/"
+# Eles encerram oferta rápido, mas um cartão ou outro fica "ativo" por semanas: passado isto, não conta.
+BOLETANDO_DIAS = 7
+_CARTAO = re.compile(r'<article class="(oferta-card[^"]*)"[^>]*>(.*?)</article>', re.S)
+
+
+def _texto(rx, trecho):
+    m = re.search(rx, trecho, re.S)
+    return html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", m.group(1)))).strip() if m else None
+
+
+def boletando(termo):
+    """Ofertas e cupons da busca do Boletando, no formato de promocoes()."""
+    achadas = {}
+    for classes, a in _CARTAO.findall(baixar(BOLETANDO + "?s=" + urllib.parse.quote_plus(termo))):
+        oferta = re.search(r'href="([^"]*\?oferta=(\d+))"', a)
+        # O selo "[BAIXOU]" fica dentro do título: sai antes de ler.
+        a = re.sub(r'<span class="oferta-card-antes-badges">(?:<span[^>]*>[^<]*</span>)*</span>', "", a)
+        titulo = _texto(r'<h3 class="oferta-card-title">\s*<a[^>]*>(.*?)</a>', a)
+        if not oferta or not titulo:
+            continue
+        inteiro = _texto(r'oferta-card-price-integer">([^<]*)<', a)
+        preco = numero(inteiro + (_texto(r'oferta-card-price-cents">([^<]*)<', a) or "")) if inteiro else None
+        eh_cupom = preco is None and normalizar(titulo).startswith("cupom")
+        pct = re.search(r"(\d{1,2})\s*%\s*(?:off|de desconto)", normalizar(titulo)) if eh_cupom else None
+        codigo = _texto(r'data-coupon="([^"]*)"', a) or ""
+        imagem = re.search(r'oferta-card-image">\s*<img src="([^"]+)"', a)
+        quando = _data(_texto(r'datetime="([^"]+)"', a))
+        id_ = f"boletando-{oferta.group(2)}"
+        achadas[id_] = {
+            "id": id_, "titulo": titulo, "preco": preco,
+            "status": "active" if "expired" not in classes.split() and _recente(quando, BOLETANDO_DIAS) else "expired",
+            "criada": _utc(quando),
+            "loja": loja_padrao(_texto(r'oferta-card-store-badge" title="([^"]*)"', a) or "?"),
+            "temperatura": 0.0,  # quase todo cartão tem 0 votos: não dá para comparar com os graus do Pelando
+            "link": oferta.group(1),
+            "imagem": re.sub(r"-\d+x\d+(?=\.\w+$)", "", imagem.group(1)) if imagem else None,  # a foto grande
+            "desconto_pelando": float(pct.group(1)) if pct else None,
+            "tipo": "coupon" if eh_cupom else "offer", "desconto_fixo": None, "fonte": "boletando",
+            # Às vezes o "cupom" do cartão é uma descrição ("5% OFF", "R$ 267,06 OFF"), não um código.
+            "codigo": codigo if re.fullmatch(r"[A-Za-z0-9_-]{3,30}", codigo) else None,
+        }
+    return achadas
+
+
+# ---------------------------------------------------------------- várias fontes
+
+# Lidas a cada busca, nesta ordem. O Pelando vem primeiro e ganha quando a mesma oferta está em mais de um.
+FONTES = {"pelando": "Pelando", "promobit": "Promobit", "boletando": "Boletando"}
+LEITORES = {"pelando": promocoes, "promobit": promobit, "boletando": boletando}
+
+
 def avisada_em_outra_fonte(p, r, avisados):
-    """Oferta do Promobit que o Pelando já avisou nas últimas 24 h (mesma regra, loja e preço)."""
-    if p.get("fonte") != "promobit" or not p["preco"]:
+    """Oferta de outro site que o Pelando (ou outra fonte) já avisou nas últimas 24 h (mesma regra, loja e preço)."""
+    if p.get("fonte") == "pelando" or not p["preco"]:
         return False
     desde = agora() - timedelta(hours=24)
     return any(k != p["id"] and v.get("regra") == r["nome"] and v.get("loja") == normalizar(p["loja"])
@@ -293,13 +351,14 @@ def avisada_em_outra_fonte(p, r, avisados):
 
 
 def sem_repetir_fontes(ativas):
-    """A mesma oferta nos dois sites (mesma regra, mesma loja, preço a até 1% ou R$ 5) fica uma vez só.
-    O Pelando vem antes; a do Promobit só fica se não houver par."""
-    ativas = sorted(ativas, key=lambda x: x[1].get("fonte") == "promobit")
+    """A mesma oferta em mais de um site (mesma regra, mesma loja, preço a até 1% ou R$ 5) fica uma vez só.
+    Vale a da fonte que vem antes em FONTES (o Pelando primeiro)."""
+    ordem = list(FONTES)
+    ativas = sorted(ativas, key=lambda x: ordem.index(x[1].get("fonte", "pelando")))
     vistas, unicas = [], []
     for r, p in ativas:
         chave = (r["nome"], normalizar(p["loja"]))
-        if p.get("fonte") == "promobit" and p["preco"] and any(
+        if p.get("fonte", "pelando") != "pelando" and p["preco"] and any(
                 k == chave and abs(v - p["preco"]) <= max(5, v * 0.01) for k, v in vistas):
             continue
         if p["preco"]:
@@ -331,7 +390,7 @@ ESCOPO_GERAL = {
     "selecionadas", "site", "todo", "toda", "app", "aplicativo", "compra", "compras", "ate", "sem", "juros",
     "off", "cupom", "e", "de", "do", "da", "dos", "das", "o", "a", "os", "as", "no", "na", "nos", "nas",
     "todas", "todos", "categoria", "categorias", "reais", "magalu", "shopee", "amazon", "mercado", "livre",
-    "seus", "suas", "pedidos", "pedido", "aplicando", "melhores",
+    "seus", "suas", "pedidos", "pedido", "aplicando", "melhores", "diversos", "diversas",
 }
 _TEC = ("a57", "galaxy", "iphone", "celular", "smartphone", "watch", "notebook", "tablet")
 _CELULAR = ("a57", "galaxy", "iphone", "celular", "smartphone")
@@ -344,14 +403,16 @@ CATEGORIAS = {
     "telefonia": _CELULAR, "samsung": ("a57", "galaxy"), "apple": ("apple watch", "iphone"),
     "smartwatch": ("watch",), "smartwatches": ("watch",), "relogio": ("watch",), "relogios": ("watch",),
     "wearables": ("watch",),
-    "eletrodomesticos": _ELETRO, "eletroportateis": _ELETRO, "eletro": _ELETRO, "cozinha": _ELETRO,
+    "eletrodomesticos": _ELETRO, "eletroportateis": _ELETRO, "eletro": _ELETRO, "eletros": _ELETRO,
+    "cozinha": _ELETRO,
     "climatizacao": ("ar condicionado",), "ventilacao": ("ar condicionado",),
     "moda": ("renner",), "roupas": ("renner",), "vestuario": ("renner",),
 }
 _NUM = r"(\d[\d.,]*(?:\s*mil\b)?)"  # "1.999", "1.999,90", "1,6mil"
 _MINIMO = re.compile(r"(?:acima de|a partir de|minim[oa] de|minim[oa]|compras de)\s*(?:r\$)?\s*" + _NUM
                      + r"|\bem r\$\s*" + _NUM)
-_LIMITE = re.compile(r"(?:limitad[oa] a|limite de|limite|maximo de|maximo|\bmax\b)\s*(?:r\$)?\s*" + _NUM
+_LIMITE = re.compile(r"(?:limitad[oa] a|limite de desconto(?: de)?|limite de|limite|maximo de|maximo|\bmax\b)"
+                     r"\s*(?:r\$)?\s*" + _NUM
                      + r"|\bate r\$\s*" + _NUM)
 _FIXO = re.compile(r"r\$\s*" + _NUM + r"\s*(?:de )?(?:off|de desconto)")
 
@@ -484,7 +545,7 @@ def codigos_dos_cupons(cupons, guardados, maximo=10):
     abertos = 0
     for c, _ in cupons:
         g = guardados.setdefault(c["id"], {"em": agora().isoformat(timespec="minutes"), "chave": c["chave"]})
-        if c.get("fonte") == "promobit":  # o Promobit já manda o código junto
+        if c.get("fonte", "pelando") != "pelando":  # Promobit e Boletando já mandam o código junto
             g["cupom"] = c.get("codigo")
             continue
         if "cupom" in g or abertos >= maximo:
@@ -704,7 +765,7 @@ a.botao{margin-top:auto;align-self:flex-start;background:var(--preco);color:#fff
 
 
 def fonte_txt(p):
-    return "Promobit" if p.get("fonte") == "promobit" else "Pelando"
+    return FONTES.get(p.get("fonte"), "Pelando")
 
 
 def painel_cupons(cupons, codigos):
@@ -843,26 +904,23 @@ def main():
     regras_voo = [r for r in regras if r.get("voo")]
     regras_pelando = [r for r in regras if not r.get("voo")]
 
-    todas, falhas, falhas_promobit = {}, 0, []
+    todas, falhas = {}, {f: [] for f in FONTES}
     for i, b in enumerate(buscas):
         if i:
-            time.sleep(config.get("pausa_entre_buscas_s", 1.5))  # educação com o Pelando e o Promobit
-        try:
-            todas.update(promocoes(b["termo"]))
-        except Exception as e:
-            falhas += 1
-            log(f"falha na busca '{b['termo']}': {e}")
-        try:
-            todas.update(promobit(b["termo"]))
-        except Exception as e:
-            falhas_promobit.append(f"{b['termo']}: {e}")
-    if falhas_promobit:  # uma linha só: com o Promobit fora, seriam 16 linhas por rodada
-        log(f"promobit: {len(falhas_promobit)} de {len(buscas)} buscas falharam ({falhas_promobit[0]})")
-    if buscas and falhas == len(buscas) and len(falhas_promobit) == len(buscas):
+            time.sleep(config.get("pausa_entre_buscas_s", 1.5))  # educação com os sites
+        for f, ler in LEITORES.items():
+            try:
+                todas.update(ler(b["termo"]))
+            except Exception as e:
+                falhas[f].append(f"'{b['termo']}': {e}")
+    for f, erros in falhas.items():  # uma linha por site: com um deles fora, seriam 16 linhas por rodada
+        if erros:
+            log(f"{f}: {len(erros)} de {len(buscas)} buscas falharam ({erros[0]})")
+    if buscas and all(len(erros) == len(buscas) for erros in falhas.values()):
         log("nenhuma busca funcionou (sem internet?)")
         return
-    lidas = {f: sum(1 for p in todas.values() if p.get("fonte") == f) for f in ("pelando", "promobit")}
-    if not lidas["pelando"] and falhas < len(buscas):
+    lidas = {f: sum(1 for p in todas.values() if p.get("fonte") == f) for f in FONTES}
+    if not lidas["pelando"] and len(falhas["pelando"]) < len(buscas):
         log("nenhuma promoção lida no Pelando: o formato do site pode ter mudado")
         if estado.get("erro_avisado_em") != hoje:
             notificar("PromoTrix parou de ler o Pelando",
@@ -905,10 +963,10 @@ def main():
         print(f"{len(todas)} promoções lidas, {len(ativas)} dentro das regras (regras: {origem})")
         return
 
-    # Fonte nova (o Promobit, na primeira rodada dele): o que já está ativo lá só é guardado, sem aviso,
-    # para não tocar alarme por oferta de dias atrás.
+    # Fonte nova (na primeira rodada dela): o que já está ativo lá só é guardado, sem aviso, para não
+    # tocar alarme por oferta de dias atrás. O Pelando é a fonte de sempre e fica fora disso.
     fontes = estado.setdefault("fontes", {})
-    silenciar = {"promobit"} - set(fontes)
+    silenciar = set(FONTES) - {"pelando"} - set(fontes)
 
     alta, normal, novos_ids = [], [], []
     for r, p in sorted(ativas, key=lambda x: x[1]["preco"] or 0):
@@ -917,8 +975,8 @@ def main():
         ja = avisados.get(p["id"])
         if ja and (p["preco"] is None or ja.get("preco") is None or p["preco"] >= ja["preco"]):
             continue
-        if p.get("fonte") == "promobit":
-            cod = p.get("codigo")  # o Promobit já manda o cupom junto
+        if p.get("fonte", "pelando") != "pelando":
+            cod = p.get("codigo")  # Promobit e Boletando já mandam o cupom junto
         else:
             cod = cupom(p["link"]) if not r.get("voo") else None  # passagem não tem cupom no Pelando
         avisados[p["id"]] = {"preco": p["preco"], "em": agora().isoformat(timespec="minutes"), "cupom": cod,
@@ -990,7 +1048,7 @@ def main():
             log(f"{f}: primeira leitura, {lidas[f]} itens guardados sem aviso")
     estado["ultima_execucao"] = agora().isoformat(timespec="minutes")
     ESTADO.write_text(json.dumps(estado, ensure_ascii=False, indent=1), encoding="utf-8")
-    log(f"ok: {len(todas)} promoções lidas ({lidas['pelando']} Pelando + {lidas['promobit']} Promobit),"
+    log(f"ok: {len(todas)} promoções lidas ({' + '.join(f'{n} {FONTES[f]}' for f, n in lidas.items())}),"
         f" {len(ativas)} dentro das regras, {len(alta)} alta + {len(normal)} normal,"
         f" {len(lista_cupons)} cupons ({sum(1 for _, s in lista_cupons if s)} servem) (regras: {origem})")
     enviar_coleta(len(todas), ativas, novos_ids, {k: v.get("cupom") for k, v in avisados.items() if v.get("cupom")},

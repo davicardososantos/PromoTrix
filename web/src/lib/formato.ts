@@ -68,8 +68,9 @@ export function servidos(json: string): Servido[] {
   }
 }
 
-/** De que site veio a oferta ou o cupom (o coletor lê o Pelando e o Promobit). */
-export const fonte = (link: string) => (link.includes("promobit.com.br") ? "Promobit" : "Pelando");
+/** De que site veio a oferta ou o cupom (o coletor lê o Pelando, o Promobit e o Boletando). */
+export const fonte = (link: string) =>
+  link.includes("promobit.com.br") ? "Promobit" : link.includes("boletando.com") ? "Boletando" : "Pelando";
 
 /** Maior desconto que o cupom dá num item monitorado (0 se não serve em nenhum). */
 export const maiorDesconto = (json: string) => Math.max(0, ...servidos(json).map((s) => s.valor));

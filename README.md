@@ -1,8 +1,8 @@
 # PromoTrix
 
-Caçador de promoções. Um **coletor no PC (Windows)** lê o [Pelando](https://www.pelando.com.br) e o
-[Promobit](https://www.promobit.com.br) de tempos em tempos e **avisa na tela** quando aparece uma
-promoção ativa dentro do preço que você definiu. Um
+Caçador de promoções. Um **coletor no PC (Windows)** lê o [Pelando](https://www.pelando.com.br), o
+[Promobit](https://www.promobit.com.br) e o [Boletando](https://boletando.com) de tempos em tempos e
+**avisa na tela** quando aparece uma promoção ativa dentro do preço que você definiu. Um
 **painel web** (Next.js) guarda o histórico de preços, deixa editar os produtos e alvos pelo celular e
 manda **notificação push** das promoções importantes.
 
@@ -164,6 +164,24 @@ nada a mais. O que muda em relação ao Pelando:
   uma vez só; a do Pelando vence. O mesmo cupom nos dois também aparece uma vez.
 - **Primeira leitura:** quando uma fonte nova entra, o que já está ativo nela só é guardado, sem aviso
   (o `estado.json` guarda em `fontes` quando cada uma começou).
+
+### Boletando
+
+O [Boletando](https://boletando.com) é WordPress, e a busca (`/?s=termo`) já vem pronta no HTML, em
+cartões com preço, loja, cupom, data e a marca `expired` quando a oferta acaba. Eles encerram oferta
+rápido: o A57 que esgotou às 17h aparecia encerrado lá enquanto o Promobit ainda mostrava ativo. Como
+no Promobit, as mesmas buscas valem e o que muda é:
+
+- Cartão **sem preço** que começa com "Cupom" é cupom de loja, com código, mínimo e limite no título
+  ("Cupom Mercado Livre 10% OFF em Selecionados, Compra mínima R$149, Limite de desconto R$200").
+- O cupom do cartão de oferta às vezes é uma descrição ("5% OFF"), não um código: só vira cupom o que
+  tem cara de código.
+- Cartão com mais de 7 dias (`BOLETANDO_DIAS`) não conta, mesmo sem a marca de encerrado.
+- Votos quase sempre 0: não viram temperatura.
+
+A API do WordPress deles (`/wp-json/wp/v2/offer`) responde, mas não traz o preço; por isso o HTML. As
+fontes ficam em `FONTES` e `LEITORES`, no `promotrix.py`: outra fonte é uma função nova que devolve o
+mesmo formato de `promocoes()`, e a ordem em `FONTES` decide quem vence uma oferta repetida.
 
 ### Passagem aérea (Google Flights)
 

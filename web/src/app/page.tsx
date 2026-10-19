@@ -72,7 +72,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
         <div className="cabeca">
           <div>
             <h1>Promoções</h1>
-            <p>O que o seu PC encontrou no Pelando e no Promobit dentro dos seus alvos.</p>
+            <p>O que o seu PC encontrou no Pelando, no Promobit e no Boletando dentro dos seus alvos.</p>
           </div>
           {ultima && (
             <span className={`status${parado ? " parado" : ""}`} title={quando(ultima.em)}>

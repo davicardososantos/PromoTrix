@@ -34,7 +34,7 @@ export default async function Cupons({ searchParams }: { searchParams: Promise<{
         <div className="cabeca">
           <div>
             <h1>Cupons</h1>
-            <p>Cupons de loja ativos no Pelando e no Promobit. Os que podem servir nos seus itens vêm primeiro.</p>
+            <p>Cupons de loja ativos no Pelando, no Promobit e no Boletando. Os que podem servir nos seus itens vêm primeiro.</p>
           </div>
           {ultima && (
             <span className="status" title="Última coleta do PC">
