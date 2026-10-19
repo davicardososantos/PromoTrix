@@ -1,7 +1,7 @@
 import type { Cupom } from "@prisma/client";
 import { CopiarCupom } from "@/components/copiar-cupom";
 import { Chama, Seta } from "@/components/icones";
-import { haQuanto, lista, reais, servidos } from "@/lib/formato";
+import { fonte, haQuanto, lista, reais, servidos } from "@/lib/formato";
 
 const MAX_ITENS = 4;
 
@@ -49,7 +49,10 @@ export function CartaoCupom({ c, novo }: { c: Cupom; novo: boolean }) {
           </ul>
         </div>
       )}
-      {c.postadoEm && <span className="promo-meta">Postado {haQuanto(c.postadoEm)}</span>}
+      <span className="promo-meta">
+        Via {fonte(c.link)}
+        {c.postadoEm ? ` · postado ${haQuanto(c.postadoEm)}` : ""}
+      </span>
       <div className="promo-acoes">
         {c.codigo && <CopiarCupom codigo={c.codigo} />}
         <a className="btn btn-primario" href={c.link} target="_blank" rel="noreferrer">

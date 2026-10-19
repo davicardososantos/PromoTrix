@@ -1,7 +1,8 @@
 # PromoTrix
 
-Caçador de promoções. Um **coletor no PC (Windows)** lê o [Pelando](https://www.pelando.com.br) de tempos
-em tempos e **avisa na tela** quando aparece uma promoção ativa dentro do preço que você definiu. Um
+Caçador de promoções. Um **coletor no PC (Windows)** lê o [Pelando](https://www.pelando.com.br) e o
+[Promobit](https://www.promobit.com.br) de tempos em tempos e **avisa na tela** quando aparece uma
+promoção ativa dentro do preço que você definiu. Um
 **painel web** (Next.js) guarda o histórico de preços, deixa editar os produtos e alvos pelo celular e
 manda **notificação push** das promoções importantes.
 
@@ -140,6 +141,29 @@ e o código fica no `estado.json`.
 O PromoTrix **não sabe se o anúncio aceita o cupom** (muitos valem só para "itens selecionados"): o
 aviso diz em que itens ele **pode** servir e quanto daria no preço normal, sem inventar preço final.
 Quem confirma é o carrinho. Todos os cupons ativos, sirvam ou não, vão para a aba **Cupons** do site.
+Cupom postado há mais de 2 dias (`CUPOM_AVISO_DIAS`) não avisa, mesmo que apareça agora na busca: fica
+só na aba, porque muitos já esgotaram. Cupom sem mínimo, sem limite e sem categoria conhecidos ("Economize
+10% aplicando cupom Amazon") também não conta como "serve": dizer quanto daria num item seria chute.
+
+### Promobit
+
+O [Promobit](https://www.promobit.com.br) carrega a busca de uma API pública (`api.promobit.com.br`), a
+mesma que o navegador usa, e ela responde da internet de casa. **Cada busca do config vale para os dois
+sites**: `cupom <loja>` traz os cupons da loja e o resto traz as ofertas ativas. Não precisa cadastrar
+nada a mais. O que muda em relação ao Pelando:
+
+- **Oferta velha:** o Promobit demora a encerrar oferta. Só conta como ativa a postada há até 3 dias
+  (`PROMOBIT_DIAS_OFERTA`), e o cupom até 7 dias, ou até a validade dele.
+- **Sem % do preço riscado:** o "de" do Promobit é o preço riscado da loja, muitas vezes inflado (o A57
+  aparece "de R$ 4.299"). O % continua vindo do `preco_referencia` da regra.
+- **Sem votos:** curtida do Promobit não tem a escala dos graus do Pelando, então não vira temperatura.
+- **Cupom:** o código vem junto (não precisa abrir o post). As condições de verdade costumam estar nas
+  instruções ("Compra mínima de R$ 450. Válido em: TECNOLOGIA."), e o coletor lê mínimo, limite e
+  categoria de lá também.
+- **Repetida:** a mesma oferta nos dois sites (mesma regra, loja e preço, com 1% ou R$ 5 de folga) avisa
+  uma vez só; a do Pelando vence. O mesmo cupom nos dois também aparece uma vez.
+- **Primeira leitura:** quando uma fonte nova entra, o que já está ativo nela só é guardado, sem aviso
+  (o `estado.json` guarda em `fontes` quando cada uma começou).
 
 ### Passagem aérea (Google Flights)
 

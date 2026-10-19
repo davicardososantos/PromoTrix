@@ -2,7 +2,7 @@ import type { Preco, Promocao, Regra } from "@prisma/client";
 import { CopiarCupom } from "@/components/copiar-cupom";
 import { Chama, Imagem, Seta } from "@/components/icones";
 import { Sparkline } from "@/components/sparkline";
-import { haQuanto, reais } from "@/lib/formato";
+import { fonte, haQuanto, reais } from "@/lib/formato";
 
 export type PromoComRegra = Promocao & { regra: Regra | null; precos?: Preco[] };
 
@@ -55,6 +55,7 @@ export function CartaoPromo({ p, novo, menorPreco }: { p: PromoComRegra; novo: b
         {p.precos && <Sparkline precos={p.precos} />}
         <span className="promo-meta">
           {p.loja}
+          {p.regra?.voo ? "" : ` · via ${fonte(p.link)}`}
           {p.postadaEm ? ` · postada ${haQuanto(p.postadaEm)}` : ""}
         </span>
         <div className="promo-acoes">
